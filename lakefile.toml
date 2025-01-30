@@ -8,3 +8,7 @@ name = "C2Validator"
 [[lean_exe]]
 name = "c2validator"
 root = "Main"
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
