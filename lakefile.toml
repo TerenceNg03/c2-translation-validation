@@ -1,0 +1,10 @@
+name = "C2Validator"
+version = "0.1.0"
+defaultTargets = ["c2validator"]
+
+[[lean_lib]]
+name = "C2Validator"
+
+[[lean_exe]]
+name = "c2validator"
+root = "Main"
