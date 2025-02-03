@@ -48,10 +48,12 @@ def contentFiltered (filter : Parser Bool) (p : Parser a) : Parser (Array a) := 
   let filtered ← Array.filterM (λ x ↦ withReader (λ _ ↦ x) filter') elems
   Array.mapM (λ x ↦ withReader (λ _ ↦ x) p) filtered
 
-def contentFilteredHead (filter : Parser Bool) (p : Parser a) : Parser a := do
+def contentFilteredHead [ToString a](filter : Parser Bool) (p : Parser a) : Parser a := do
   let arr ← contentFiltered filter p
   match Array.find? (λ _ ↦ true) arr with
     | some elem => pure elem
-    | none => throw s!"Content filter has no valid elements."
+    | none => do
+        let withoutFilter ← contentFiltered (pure true) p
+        throw s!"Content filter has no valid elements. {withoutFilter}"
 
 def contentArray (name: String) : Parser a → Parser (Array a) := contentFiltered ((λ x ↦ x == name) <$> eName)
