@@ -12,7 +12,8 @@ package «C2Validator» where
 lean_lib «C2Validator»
 
 @[default_target]
-lean_exe «c2validator» where
+lean_exe «Main» where
+  exeName := "c2validator"
 
 require "leanprover-community" / «mathlib»
 
