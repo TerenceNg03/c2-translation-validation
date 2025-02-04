@@ -10,14 +10,14 @@ instance : ToString IntTerm where
 
 inductive BoolTerm where
 | EqI (t1 : IntTerm) (t2: IntTerm)
-| EqRet (r1 : String) (r2: String)
+| Eq (r1 : String) (r2: String)
 | Not  (b : BoolTerm)
 
 instance : ToString BoolTerm where
   toString :=
     let rec toStr
       | .EqI t1 t2 => s!"(= {t1} {t2})"
-      | .EqRet s1 s2 => s!"(= {s1} {s2})"
+      | .Eq s1 s2 => s!"(= {s1} {s2})"
       | .Not b => s!"(not {toStr b})"
     toStr
 

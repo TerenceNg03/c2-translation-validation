@@ -36,17 +36,27 @@ def edgesVC (nodes: Lean.RBMap Nat Node compare) (edges : Array Edge) (nPostfix 
 def graphVC (nPostfix : String) : Graph → Except String Program
   | .Graph _ edges nodes => edgesVC nodes edges nPostfix
 
-def connectParms : Graph → Program :=
-  sorry
+def connectParms : Graph → Program
+  | .Graph _ _ nodes =>
+  let nodes := Lean.RBMap.toList nodes
+  let filter | (idx, .ParmInt) => some idx
+              | _ => none
+  let nodes := List.filterMap filter nodes
+  let decls₁ := Lean.RBTree.fromList (List.map (λ x ↦ s!"v_{x}_pre") nodes) compare
+  let decls₂ := Lean.RBTree.fromList (List.map (λ x ↦ s!"v_{x}_post") nodes) compare
+  let decls := Lean.RBTree.union decls₁ decls₂
+  let asserts := Array.map (λ (s₁, s₂) ↦ Assert $ Eq s₁ s₂) $ Array.zip (Lean.RBTree.toArray decls₁) (Lean.RBTree.toArray decls₂)
+  Program.Program decls asserts
 
 
 def vcGen (g₁ : Graph) (g₂ : Graph) : Except String Program := do
   let p₁ ← graphVC "pre" g₁
   let p₂ ← graphVC "post" g₂
-  let p₃ := Program.Program
+  let p₃ := connectParms g₁
+  let p₄ := Program.Program
     Lean.RBTree.empty
-    #[ Assert $ Not $ EqRet "ret_pre" "ret_post"
+    #[ Assert $ Not $ Eq "ret_pre" "ret_post"
      , CheckSAT
      , GetModel
      ]
-  pure $ (p₁ ∨ p₂) ∨ p₃
+  pure $ ((p₁ ∨ p₂) ∨ p₃) ∨ p₄
