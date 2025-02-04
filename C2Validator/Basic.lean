@@ -1,1 +1,2 @@
-import C2Validator.SoNGraph
+import C2Validator.SoN
+import C2Validator.VC

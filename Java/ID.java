@@ -4,6 +4,7 @@ class ID {
     }
 
     static int id(int i){
-        return i;
+        int j = i;
+        return j;
     }
 }

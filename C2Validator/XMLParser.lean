@@ -1,6 +1,8 @@
 import Lean.Data.Xml
 open Lean.Xml
 
+namespace XMLParser
+
 abbrev Parser : Type → Type := ReaderT Element (Except String)
 
 def eAttr? (attr : String) (p : String → Option a) : Parser a :=
