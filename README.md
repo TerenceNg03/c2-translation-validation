@@ -1,12 +1,7 @@
 # C2Validator
 
-## Build SoN from Java Files
-Put the java files into `Java/` and run this command:
+## Verify a Java File
+Make sure you have a debug build `java` and `z3` command available.
 ```sh
-lake run genXML
-```
-
-## Run Main Function
-```sh
-lake exe Main
+lake exe Main <FILE_TO_VERIFY>
 ```

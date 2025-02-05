@@ -1,4 +1,7 @@
 import Lean.Data.RBTree
+import C2Validator.ValError
+
+open ValError
 
 namespace Z3
 
@@ -53,3 +56,36 @@ instance : ToString Program where
 
 
 infixl:65 "∨" => Program.join
+
+def validate (path : System.FilePath) (program : Program) : IO (Error PUnit) := do
+  IO.println s!"[INFO] Generating SMT file..."
+  let path ← IO.FS.realPath path
+  let smt := path.withExtension "smt"
+  IO.FS.writeFile smt s!"{program}"
+  IO.println s!"[INFO] Running Z3 prover..."
+  let command : IO.Process.SpawnArgs :=
+  { cmd := "z3"
+  , args := #[s!"{smt}"]
+  , stdout := .piped
+  }
+  let child ← IO.Process.spawn command
+  let rec wait t := do
+    let code ← IO.Process.Child.tryWait child
+    match code with
+      | some code =>
+        let out ← child.stdout.readToEnd
+        match code with
+        | 0 => pure $ throw $ ValError.CounterExample out
+        | 127 => pure ∘ throw $ ValError.Plain "`z3` is not executable."
+        | 1 => pure $ pure ()
+        | x => pure ∘ throw $ ValError.Plain "z3 command returns code {x}."
+      | none =>
+        if t ≤ 0 then
+          do
+            IO.Process.Child.kill child
+            pure $ throw ValError.Timeout
+        else
+          do
+            IO.sleep 100
+            wait (t - 100)
+  wait 5000

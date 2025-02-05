@@ -1,10 +1,8 @@
 import C2Validator
-import Lean.Data.Xml
 
-def main : IO Unit := do
-  let file ← IO.FS.readFile "Java/ID.xml"
-  let son := SoN.parseSoN =<< Lean.Xml.parse file
-  let z3 := son >>= (Function.uncurry VC.vcGen)
-  match z3 with
-  | .ok s => IO.println s
-  | .error s => IO.println s
+def main (args : List String) : IO UInt32 := do
+  match List.head? args with
+  | some file => Verify.verify file
+  | none => do
+    IO.eprintln "Require a file"
+    pure 1

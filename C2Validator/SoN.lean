@@ -1,6 +1,8 @@
 import Lean.Data.Xml
 import C2Validator.XMLParser
+import C2Validator.ValError
 
+open ValError
 open Lean.Xml
 open Except
 open XMLParser
@@ -32,14 +34,21 @@ def propertyP? (name: String) : Parser (Option String) :=
 def nodeP : Parser (Option (Nat × Node)) := do
   let idx ← eAttr? "id" String.toNat?
   let name ← propertyP "name"
+  let type ← propertyP "type"
   match name with
     | "Return" => pure $ (idx, Node.Return)
     | "Parm" => do
       let bottomType ← propertyP? "bottom_type"
-      pure $ match bottomType with
-        | some "int" => (idx, Node.ParmInt)
-        | _ => none
-    | _ => pure none
+      pure $ match Option.getD bottomType type with
+        | "int" => some (idx, Node.ParmInt)
+        | "control"
+        | "abIO"
+        | "rawptr:BotPTR"
+        | "return_address"
+        | "memory" => none
+        | name => some (idx, Node.Unknown name)
+    | "Root" | "Con" | "Start" => pure none
+    | name => pure $ (idx, Node.Unknown name)
 
 def edgeP : Parser Edge :=
   Edge.Edge <$> natAttr "from"
@@ -56,11 +65,11 @@ def readGraph : Parser Graph := do
   pure $ Graph.Graph name edges $ Lean.RBMap.fromArray nodes compare
 
 
-def parseSoN (elem : Element) : Except String (Graph × Graph) := do
+def parseSoN (elem : Element) : Error (Graph × Graph) := do
   let graphs ← content "group" (contentFiltered filter readGraph) elem
   match (Array.get? graphs 0, Array.get? graphs 1) with
   | (some g1, some g2) => pure $ (g1, g2)
-  | _ => throw "[Error] «After Parsing» or «Optimize finished» phase missing."
+  | _ => throw $ ValError.Plain "«After Parsing» or «Optimize finished» phase missing."
 where
   filter := List.and <$> sequence
       [ (λ x ↦ x == "graph") <$> eName
