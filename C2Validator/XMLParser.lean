@@ -13,7 +13,7 @@ def eAttr? (attr : String) (p : String → Option a) : Parser a :=
     let elem@(.Element _ attrs _) <- read
     match Lean.RBMap.find? attrs attr >>= p with
       | some x => pure x
-      | none => throw $ ValError.Plain s!"Element missing attribute: {attr} at {elem}"
+      | none => throw $ ValError.Parse s!"Element missing attribute: {attr} at {elem}"
 
 def eName : Parser String := do
   do
@@ -31,7 +31,7 @@ def contentString : Parser String := do
           | _ => none
     match Array.findSome? f cont with
       | some s => pure $ String.stripPrefix s "\n"
-      | none => throw $ ValError.Plain s!"Content has no string, got {cont}"
+      | none => throw $ ValError.Parse s!"Content has no string, got {cont}"
 
 def content (name: String) (p : Parser a): Parser a :=
   do
@@ -41,7 +41,7 @@ def content (name: String) (p : Parser a): Parser a :=
           | _ => none
     match Array.findSome? f cont with
       | some elem => withReader (λ _ ↦ elem) p
-      | none => throw $ ValError.Plain s!"No content element with name: {name} at {elem0}"
+      | none => throw $ ValError.Parse s!"No content element with name: {name} at {elem0}"
 
 def contentFiltered (filter : Parser Bool) (p : Parser a) : Parser (Array a) := do
   let .Element _ _ cont <- read
@@ -59,6 +59,6 @@ def contentFilteredHead [ToString a](filter : Parser Bool) (p : Parser a) : Pars
     | some elem => pure elem
     | none => do
         let withoutFilter ← contentFiltered (pure true) p
-        throw $ ValError.Plain s!"Content filter has no valid elements. {withoutFilter}"
+        throw $ ValError.Parse s!"Content filter has no valid elements. {withoutFilter}"
 
 def contentArray (name: String) : Parser a → Parser (Array a) := contentFiltered ((λ x ↦ x == name) <$> eName)

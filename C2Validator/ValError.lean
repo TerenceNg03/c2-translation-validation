@@ -6,7 +6,9 @@ inductive ValError where
 | CounterExample (ce : String)
 | Undecidable
 | Timeout
-| Plain (reason : String)
+| Z3 (reason : String)
+| VC (reason : String)
+| Parse (reason : String)
 
 abbrev Error := Except ValError
 
@@ -14,9 +16,9 @@ instance : ToString ValError where
   toString
     | .Unsupported s => s!"❓ [Unsupported] {s}"
     | .Compile s => s!"❌ [Compiler Error] Can not compile file: {s}"
-    | .Undecidable => s!"❓ [Undecidable problem] loop"
+    | .Undecidable => s!"❓ [Undecidable Problem] loop"
     | .CounterExample ce => s!"❌ [Counter Example] \n{ce}"
-    | .Plain s => s!"❌ [Error] {s}"
+    | .Z3 s => s!"❌ [Z3 Error] {s}"
+    | .VC s => s!"❌ [Verfi Cond Gen Error] {s}"
+    | .Parse s => s!"❌ [Parsing Error] {s}"
     | .Timeout => s!"❓ [Timeout]"
-
-def fromExcept {α : Type} : Except String α → Error α := Except.mapError ValError.Plain

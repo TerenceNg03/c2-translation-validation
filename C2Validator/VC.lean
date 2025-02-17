@@ -10,55 +10,91 @@ open Z3
 namespace VC
 
 open Stat
-open BoolTerm
-open IntTerm
+open Term
 
-def edgeVC (nodes: Lean.RBMap Nat Node compare) (edge : Edge) (nPostfix : String): Error Program :=
-  let .Edge srcIdx desIdx _ := edge
-    let src := Lean.RBMap.findD nodes srcIdx $ Node.Unknown s!"[Error] Missing node {srcIdx}"
-    let des := Lean.RBMap.findD nodes desIdx $ Node.Unknown s!"[Error] Missing node {desIdx}"
-    match (src, des) with
-      | (.ParmInt, .Return) => pure $
-        Program.Program
-          (Lean.RBTree.ofList [name srcIdx, ret]) #[Assert $ EqI (var srcIdx) (Var ret)]
-      | (.Unknown s, _)  | (_, .Unknown s) => throw $ ValError.Unsupported s!"Unknown node {s}"
-      | (.ParmInt, .ParmInt) => throw $ ValError.Unsupported s!"Edge parm → pram"
-      | (.Return, _) => throw $ ValError.Unsupported s!"Edge return → ..."
-  where
-    var (idx: Nat) := IntTerm.Var $ name idx
-    @[inline] name (idx: Nat) := s!"v_{idx}_{nPostfix}"
-    @[inline] ret := s!"ret_{nPostfix}"
+inductive Stage where
+| pre
+| post
 
-def edgesVC (nodes: Lean.RBMap Nat Node compare) (edges : Array Edge) (nPostfix : String): Error Program :=
-  Array.foldlM gen Program.empty edges
-  where gen stats edge := do
-    let stat ← edgeVC nodes edge nPostfix
-    pure $ stats ∨ stat
+instance : ToString Stage where
+  toString
+    | .pre => "pre"
+    | .post => "post"
 
-def graphVC (nPostfix : String) : Graph → Error Program
-  | .Graph _ edges nodes => edgesVC nodes edges nPostfix
+abbrev VC := ReaderT Stage (StateT Program Error)
 
-def connectParms : Graph → Program
-  | .Graph _ _ nodes =>
-  let nodes := Lean.RBMap.toList nodes
-  let filter | (idx, .ParmInt) => some idx
-              | _ => none
-  let nodes := List.filterMap filter nodes
-  let decls₁ := Lean.RBTree.fromList (List.map (λ x ↦ s!"v_{x}_pre") nodes) compare
-  let decls₂ := Lean.RBTree.fromList (List.map (λ x ↦ s!"v_{x}_post") nodes) compare
-  let decls := Lean.RBTree.union decls₁ decls₂
-  let asserts := Array.map (λ (s₁, s₂) ↦ Assert $ Eq s₁ s₂) $ Array.zip (Lean.RBTree.toArray decls₁) (Lean.RBTree.toArray decls₂)
-  Program.Program decls asserts
+def registerVar  (idx : Nat) (ty : Z3Type): VC String := do
+  let stage ← read
+  let var := s!"{stage}_{idx}"
+  let .Program vars stats ← get
+  let ty' := Lean.RBMap.find? vars var
+  match ty' with
+  | some ty' =>
+    if not (ty' == ty) then
+      throw $ ValError.VC s!"Var {var} has conflicting type {ty} and {ty'}."
+    else pure ()
+  | none => pure ()
+  let vars := Lean.RBMap.insert vars var ty
+  set $ Program.Program vars stats
+  pure var
 
+def newStat (stat : Stat) : VC PUnit :=
+  modify $ λ (.Program vars stats) ↦ Program.Program vars (Array.push stats stat)
 
-def vcGen (g₁ : Graph) (g₂ : Graph) : Error Program := do
-  let p₁ ← graphVC "pre" g₁
-  let p₂ ← graphVC "post" g₂
-  let p₃ := connectParms g₁
-  let p₄ := Program.Program
-    Lean.RBTree.empty
-    #[ Assert $ Not $ Eq "ret_pre" "ret_post"
-     , CheckSAT
-     , GetModel
-     ]
-  pure $ ((p₁ ∨ p₂) ∨ p₃) ∨ p₄
+def genNodeVar' (idx : Nat) : Node → VC (String × Z3Type)
+| .ParmInt => do
+  let name ← registerVar idx Z3Type.Int
+  pure (name, Z3Type.Int)
+| .AddI _ _ => do
+  let name ← registerVar idx Z3Type.Int
+  pure (name, Z3Type.Int)
+| .Return _ => throw $ ValError.VC s!"Call genNodeVar on return node."
+
+def genNodeVar := Function.uncurry genNodeVar'
+
+def genRet (idx : Nat) (ty : Z3Type) : Node → VC String
+| .Return _ => registerVar idx ty
+| _ => throw $ ValError.VC s!"Call genRet on Node {idx}, which is not a return node."
+
+def genNode (idx : Nat) (node : Node) : VC PUnit :=
+  match node with
+  | .ParmInt => pure ()
+  | .AddI x y => do
+    let x ← genNodeVar x
+    let y ← genNodeVar y
+    let this ← genNodeVar (idx, node)
+    newStat $ Assert $ Eq
+      (Var this.fst) (AddI (Var x.fst) (Var y.fst))
+  | .Return prev=> do
+    let (prev, ty) ← genNodeVar prev
+    let this ← genRet idx ty node
+    newStat $ Assert $ Eq (Var prev) (Var this)
+
+def genNodes : Graph → VC PUnit
+| .Graph _ nodes => Lean.RBMap.forM genNode nodes
+
+def withPre : VC α → VC α := ReaderT.adapt λ _ => Stage.pre
+def withPost : VC α → VC α := ReaderT.adapt λ _ => Stage.post
+
+def connectGraphs : Graph → VC PUnit
+| .Graph _ nodes =>
+  flip Lean.RBMap.forM nodes λ idx node ↦ do
+    match node with
+    | .ParmInt => do
+        let pre ← withPre $ genNodeVar (idx, node)
+        let post ← withPost $ genNodeVar (idx, node)
+        newStat $ Assert $ Eq (Var pre.fst) (Var post.fst)
+    | .Return (idx', node') => do
+        let ty ← Prod.snd <$> genNodeVar (idx', node')
+        let pre ← withPre $ genRet idx ty node
+        let post ← withPre $ genRet idx ty node
+        newStat $ Assert $ Not $ Eq (Var pre) (Var post)
+    | .AddI _ _ => pure ()
+
+def vcGen (g₁ : Graph) (g₂ : Graph) : Error Program :=
+    let gen := do
+        withPre $ genNodes g₁
+        withPost $ genNodes g₂
+        connectGraphs g₁
+    let m := StateT.run (ReaderT.run gen Stage.pre) Program.empty
+    Prod.snd <$> m

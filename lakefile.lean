@@ -15,4 +15,8 @@ lean_lib «C2Validator»
 lean_exe «Main» where
   exeName := "c2validator"
 
+@[test_driver]
+lean_exe «Test» where
+  exeName := "c2validator-test"
+
 require "leanprover-community" / «mathlib»

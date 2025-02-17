@@ -16,7 +16,7 @@ def compileIR (path : System.FilePath) : IO (Error String):= do
                 , s!"-XX:PrintIdealGraphFile={xml}"
                 , path.toString
                 ]
-      , stdout := .inherit
+      , stdout := .null
       }
   IO.println s!"[INFO] Compiling {path.fileName.get!}..."
   let child ← IO.Process.spawn command
