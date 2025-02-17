@@ -4,6 +4,6 @@ public class Arithmetic{
     }
 
     static int arithmetic (int i, int j) {
-        return i + j;
+        return i + j + -10000;
     }
 }

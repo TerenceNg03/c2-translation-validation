@@ -16,6 +16,7 @@ instance : ToString Z3Type where
 
 inductive Term where
 | Var (name : String)
+| Int (val : Int)
 | Eq (t1 : Term) (t2: Term)
 | Not  (b : Term)
 | AddI (t1 : Term) (t2 : Term)
@@ -24,6 +25,7 @@ instance : ToString Term where
   toString :=
     let rec toStr
       | .Var t => t
+      | .Int v => s!"#x{v.toInt32.toBitVec.toHex}"
       | .Eq t1 t2 => s!"(= {toStr t1} {toStr t2})"
       | .Not b => s!"(not {toStr b})"
       | .AddI t1 t2 => s!"(bvadd {toStr t1} {toStr t2})"

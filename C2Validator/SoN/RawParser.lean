@@ -17,6 +17,7 @@ inductive NodeRaw where
 | ParmInt
 | Return
 | AddI
+| ConI (val: Int)
 deriving Repr
 
 inductive GraphRaw where
@@ -48,6 +49,11 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
         | "memory" => pure none
         | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
     | "AddI" => pure $ some (idx, NodeRaw.AddI)
+    | "ConI" => do
+      let bottomType ← propertyP "bottom_type"
+      let val ← match String.toInt? $ bottomType.drop 4 with
+        | some i => pure $ some (idx, NodeRaw.ConI i)
+        | none => throw $ ValError.Parse s!"Node {idx} ConI has no valid constant value."
     | "Root" | "Con" | "Start" => pure none
     | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
 

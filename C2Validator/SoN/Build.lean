@@ -14,6 +14,7 @@ inductive Node where
 | ParmInt
 | Return (val : Nat × Node)
 | AddI (x : Nat × Node) (y : Nat × Node)
+| ConI (val : Int)
 deriving Repr, Nonempty
 
 inductive Graph where
@@ -48,13 +49,14 @@ partial def buildNode (idx : Nat) :  BuildM Node := do
 
 partial def buildNode' (idx : Nat) : NodeRaw → BuildM Node
 | .ParmInt => pure $ Node.ParmInt
+| .Return => do
+  let input ← expectNode idx 5
+  pure $ Node.Return input
 | .AddI => do
   let x ← expectNode idx 1
   let y ← expectNode idx 2
   pure $ Node.AddI x y
-| .Return => do
-  let input ← expectNode idx 5
-  pure $ Node.Return input
+| .ConI v => pure $ Node.ConI v
 end
 
 def buildAllNodes : BuildM PUnit := do

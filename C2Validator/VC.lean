@@ -45,11 +45,13 @@ def genNodeVar' (idx : Nat) : Node → VC (String × Z3Type)
 | .ParmInt => do
   let name ← registerVar idx Z3Type.Int
   pure (name, Z3Type.Int)
+| .Return _ => throw $ ValError.VC s!"Call genNodeVar on return node."
 | .AddI _ _ => do
   let name ← registerVar idx Z3Type.Int
   pure (name, Z3Type.Int)
-| .Return _ => throw $ ValError.VC s!"Call genNodeVar on return node."
-
+| .ConI _ => do
+  let name ← registerVar idx Z3Type.Int
+  pure (name, Z3Type.Int)
 def genNodeVar := Function.uncurry genNodeVar'
 
 def genRet (idx : Nat) (ty : Z3Type) : Node → VC String
@@ -65,6 +67,9 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
     let this ← genNodeVar (idx, node)
     newStat $ Assert $ Eq
       (Var this.fst) (AddI (Var x.fst) (Var y.fst))
+  | .ConI v => do
+    let this ← genNodeVar (idx, node)
+    newStat $ Assert $ Eq (Var this.fst) (Int v)
   | .Return prev=> do
     let (prev, ty) ← genNodeVar prev
     let this ← genRet idx ty node
@@ -89,7 +94,7 @@ def connectGraphs : Graph → VC PUnit
         let pre ← withPre $ genRet idx ty node
         let post ← withPre $ genRet idx ty node
         newStat $ Assert $ Not $ Eq (Var pre) (Var post)
-    | .AddI _ _ => pure ()
+    | .AddI _ _ | .ConI _ => pure ()
 
 def vcGen (g₁ : Graph) (g₂ : Graph) : Error Program :=
     let gen := do
