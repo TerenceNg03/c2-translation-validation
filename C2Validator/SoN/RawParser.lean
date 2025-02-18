@@ -12,8 +12,13 @@ inductive Edge where
 | Edge (src : Nat) (des : Nat) (index : Nat)
 deriving Repr
 
+inductive Cmp where
+| Ne
+deriving Repr
+
 inductive NodeRaw where
 | ParmInt
+| ParmCtrl
 | Return
 | AddI
 | ConI (val: Int)
@@ -25,7 +30,14 @@ inductive NodeRaw where
 | ConvL2I
 | MulL
 | MulI
+| DivI
+| CmpI
+| Bool (cmp : Cmp)
 | ConL (val: Int)
+| ProjCtrl
+| If
+| IfFalse
+| IfTrue
 deriving Repr
 
 inductive GraphRaw where
@@ -50,11 +62,15 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
       let bottomType ← propertyP? "bottom_type"
       match Option.getD bottomType type with
         | "int" => pure $ some (idx, NodeRaw.ParmInt)
-        | "control"
+        | "control" => pure $ some (idx, NodeRaw.ParmCtrl)
         | "abIO"
         | "rawptr:BotPTR"
         | "return_address"
         | "memory" => pure none
+        | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
+    | "Proj" => do
+      match type with
+        | "control" => pure $ some (idx, NodeRaw.ProjCtrl)
         | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
     | "AddI" => pure $ some (idx, NodeRaw.AddI)
     | "SubI" => pure $ some (idx, NodeRaw.SubI)
@@ -65,6 +81,18 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
     | "ConvL2I" => pure $ some (idx, NodeRaw.ConvL2I)
     | "MulL" => pure $ some (idx, NodeRaw.MulL)
     | "MulI" => pure $ some (idx, NodeRaw.MulI)
+    | "CmpI" => pure $ some (idx, NodeRaw.CmpI)
+    | "DivI" => pure $ some (idx, NodeRaw.DivI)
+    | "CallStaticJava" => pure none
+    | "If" => pure $ some (idx, NodeRaw.If)
+    | "IfFalse" => pure $ some (idx, NodeRaw.IfFalse)
+    | "IfTrue" => pure $ some (idx, NodeRaw.IfTrue)
+    | "Bool" => do
+      let spec ← propertyP "dump_spec"
+      let cmp ← match spec with
+      | "[ne]" => pure Cmp.Ne
+      | cmp => throw $ ValError.Parse s!"Unknown bool node dump_spec {cmp} at Node {idx}"
+      pure $ some (idx, NodeRaw.Bool cmp)
     | "ConI" => do
       let bottomType ← propertyP "bottom_type"
       let val ← match String.toInt? $ bottomType.drop 4 with
@@ -75,7 +103,7 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
       let val ← match String.toInt? $ bottomType.drop 5 with
         | some i => pure $ some (idx, NodeRaw.ConL i)
         | none => throw $ ValError.Parse s!"Node {idx} ConL has no valid constant value."
-    | "Root" | "Con" | "Start" => pure none
+    | "Root" | "Con" | "Start" | "Halt" => pure none
     | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
 
 def edgeP : Parser Edge :=

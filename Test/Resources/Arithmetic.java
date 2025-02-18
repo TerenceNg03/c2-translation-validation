@@ -7,7 +7,7 @@ public class Arithmetic{
         i = 127 - i;
         j++;
         i *= 10;
-        i = i / 5;
+        i = i / j;
         i = i + j % 21;
         i--;
         return i - j + -143;

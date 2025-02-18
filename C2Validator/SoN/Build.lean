@@ -10,7 +10,7 @@ namespace SoN
 
 inductive Node where
 | ParmInt
-| Return (val : Nat × Node)
+| Return (ctrl : Nat × Node) (val : Nat × Node)
 | AddI (x : Nat × Node) (y : Nat × Node)
 | SubI (x : Nat × Node) (y : Nat × Node)
 | LShiftI (x : Nat × Node) (y : Nat × Node)
@@ -20,8 +20,13 @@ inductive Node where
 | ConvL2I (x : Nat × Node)
 | MulL (x : Nat × Node) (y : Nat × Node)
 | MulI (x : Nat × Node) (y : Nat × Node)
+| DivI (x : Nat × Node) (y : Nat × Node)
 | ConL (val: Int)
 | ConI (val : Int)
+| ConB (val : Bool)
+| If (prev : Nat × Node) (cond : Nat × Node)
+| CmpResult (prev : Nat × Node) (cmp : Cmp)
+| PassCtrl (prev : Nat × Node)
 deriving Repr, Nonempty
 
 inductive Graph where
@@ -57,24 +62,38 @@ partial def buildNode (idx : Nat) :  BuildM Node := do
 partial def buildNode' (idx : Nat) : NodeRaw → BuildM Node
 | .ParmInt => pure $ Node.ParmInt
 | .Return => do
+  let ctrl ← expectNode idx 0
   let input ← expectNode idx 5
-  pure $ Node.Return input
+  pure $ Node.Return ctrl input
 | .AddI => bin Node.AddI
-| .SubI => bin Node.SubI
+| .SubI |.CmpI => bin Node.SubI
 | .LShiftI => bin Node.LShiftI
 | .RShiftI => bin Node.RShiftI
 | .RShiftL => bin Node.RShiftL
 | .MulL => bin Node.MulL
 | .MulI => bin Node.MulI
+| .DivI => bin Node.DivI
 | .ConvI2L => expectNode idx 1 >>= pure ∘ Node.ConvI2L
 | .ConvL2I => expectNode idx 1 >>= pure ∘ Node.ConvL2I
+| .Bool cmp => do
+    let x ← expectNode idx 1
+    pure $ Node.CmpResult x cmp
+| .If => do
+    let x ← expectNode idx 0
+    let y ← expectNode idx 1
+    pure $ Node.If x y
 | .ConI v => pure $ Node.ConI v
 | .ConL v => pure $ Node.ConL v
+| .ProjCtrl | .ParmCtrl => pure $ Node.ConB true
+| .IfTrue | .IfFalse => do
+    let prev ← expectNode idx 0
+    pure $ Node.PassCtrl prev
 where
   bin (op : Nat × Node → Nat × Node → Node) : BuildM Node := do
   let x ← expectNode idx 1
   let y ← expectNode idx 2
   pure $ op x y
+
 end
 
 def buildAllNodes : BuildM PUnit := do
