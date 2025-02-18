@@ -1,10 +1,11 @@
-import C2Validator.SoN.RawParser
 import C2Validator.SoN.Build
 import C2Validator.ValError
+import Lean.Data.Xml
 
 open ValError
 
 namespace SoN
+
 
 def parse (elem : Lean.Xml.Element) : Error (Graph × Graph) := do
   let (g1, g2) ← parseRaw elem

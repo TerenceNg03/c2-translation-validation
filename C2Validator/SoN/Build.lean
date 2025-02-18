@@ -1,12 +1,10 @@
 import Lean.Data.Xml
-import C2Validator.XMLParser
 import C2Validator.ValError
 import C2Validator.SoN.RawParser
 
 open ValError
 open Lean.Xml
 open Except
-open XMLParser
 
 namespace SoN
 
@@ -14,6 +12,15 @@ inductive Node where
 | ParmInt
 | Return (val : Nat × Node)
 | AddI (x : Nat × Node) (y : Nat × Node)
+| SubI (x : Nat × Node) (y : Nat × Node)
+| LShiftI (x : Nat × Node) (y : Nat × Node)
+| RShiftI (x : Nat × Node) (y : Nat × Node)
+| RShiftL (x : Nat × Node) (y : Nat × Node)
+| ConvI2L (x : Nat × Node)
+| ConvL2I (x : Nat × Node)
+| MulL (x : Nat × Node) (y : Nat × Node)
+| MulI (x : Nat × Node) (y : Nat × Node)
+| ConL (val: Int)
 | ConI (val : Int)
 deriving Repr, Nonempty
 
@@ -52,11 +59,22 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM Node
 | .Return => do
   let input ← expectNode idx 5
   pure $ Node.Return input
-| .AddI => do
+| .AddI => bin Node.AddI
+| .SubI => bin Node.SubI
+| .LShiftI => bin Node.LShiftI
+| .RShiftI => bin Node.RShiftI
+| .RShiftL => bin Node.RShiftL
+| .MulL => bin Node.MulL
+| .MulI => bin Node.MulI
+| .ConvI2L => expectNode idx 1 >>= pure ∘ Node.ConvI2L
+| .ConvL2I => expectNode idx 1 >>= pure ∘ Node.ConvL2I
+| .ConI v => pure $ Node.ConI v
+| .ConL v => pure $ Node.ConL v
+where
+  bin (op : Nat × Node → Nat × Node → Node) : BuildM Node := do
   let x ← expectNode idx 1
   let y ← expectNode idx 2
-  pure $ Node.AddI x y
-| .ConI v => pure $ Node.ConI v
+  pure $ op x y
 end
 
 def buildAllNodes : BuildM PUnit := do

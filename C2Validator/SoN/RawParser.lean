@@ -1,11 +1,10 @@
 import Lean.Data.Xml
-import C2Validator.XMLParser
+import C2Validator.SoN.XMLParser
 import C2Validator.ValError
 
 open ValError
 open Lean.Xml
 open Except
-open XMLParser
 
 namespace SoN
 
@@ -18,6 +17,15 @@ inductive NodeRaw where
 | Return
 | AddI
 | ConI (val: Int)
+| SubI
+| LShiftI
+| RShiftI
+| RShiftL
+| ConvI2L
+| ConvL2I
+| MulL
+| MulI
+| ConL (val: Int)
 deriving Repr
 
 inductive GraphRaw where
@@ -49,11 +57,24 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
         | "memory" => pure none
         | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
     | "AddI" => pure $ some (idx, NodeRaw.AddI)
+    | "SubI" => pure $ some (idx, NodeRaw.SubI)
+    | "LShiftI" => pure $ some (idx, NodeRaw.LShiftI)
+    | "RShiftI" => pure $ some (idx, NodeRaw.RShiftI)
+    | "RShiftL" => pure $ some (idx, NodeRaw.RShiftL)
+    | "ConvI2L" => pure $ some (idx, NodeRaw.ConvI2L)
+    | "ConvL2I" => pure $ some (idx, NodeRaw.ConvL2I)
+    | "MulL" => pure $ some (idx, NodeRaw.MulL)
+    | "MulI" => pure $ some (idx, NodeRaw.MulI)
     | "ConI" => do
       let bottomType ← propertyP "bottom_type"
       let val ← match String.toInt? $ bottomType.drop 4 with
         | some i => pure $ some (idx, NodeRaw.ConI i)
         | none => throw $ ValError.Parse s!"Node {idx} ConI has no valid constant value."
+    | "ConL" => do
+      let bottomType ← propertyP "bottom_type"
+      let val ← match String.toInt? $ bottomType.drop 5 with
+        | some i => pure $ some (idx, NodeRaw.ConL i)
+        | none => throw $ ValError.Parse s!"Node {idx} ConL has no valid constant value."
     | "Root" | "Con" | "Start" => pure none
     | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
 
@@ -75,10 +96,10 @@ def parseRaw (elem : Element) : Error (GraphRaw × GraphRaw) := do
   let graphs ← content "group" (contentFiltered filter readGraphRaw) elem
   match (Array.get? graphs 0, Array.get? graphs 1) with
   | (some g1, some g2) => pure $ (g1, g2)
-  | _ => throw $ ValError.Parse "«After Parsing» or «Optimize finished» phase missing."
+  | _ => throw $ ValError.Parse "«After Parsing» or «Before matching» phase missing."
 where
   filter := List.and <$> sequence
       [ (λ x ↦ x == "graph") <$> eName
-      , eAttr? "name" λ x ↦ some $ x == "After Parsing" || x == "Optimize finished"
+      , eAttr? "name" λ x ↦ some $ x == "After Parsing" || x == "Before matching"
       ]
   sequence := List.mapM id

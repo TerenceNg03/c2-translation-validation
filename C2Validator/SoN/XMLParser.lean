@@ -4,7 +4,7 @@ import C2Validator.ValError
 open ValError
 open Lean.Xml
 
-namespace XMLParser
+namespace SoN
 
 abbrev Parser : Type → Type := ReaderT Element Error
 

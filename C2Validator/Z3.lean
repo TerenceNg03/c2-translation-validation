@@ -7,28 +7,43 @@ namespace Z3
 
 inductive Z3Type where
 | Int
+| Long
 | Bool
 deriving Inhabited, BEq
 
 instance : ToString Z3Type where
   toString | .Int => "(_ BitVec 32)"
+           | .Long => "(_ BitVec 64)"
            | .Bool => "Bool"
 
 inductive Term where
 | Var (name : String)
 | Int (val : Int)
+| Long (val : Int)
 | Eq (t1 : Term) (t2: Term)
 | Not  (b : Term)
-| AddI (t1 : Term) (t2 : Term)
-
+| Add (t1 : Term) (t2 : Term)
+| Sub (t1 : Term) (t2 : Term)
+| Shl (t1 : Term) (t2 : Term)
+| Shr (t1 : Term) (t2 : Term)
+| Mul (t1 : Term) (t2 : Term)
+| L2I (t: Term)
+| I2L (t: Term)
 instance : ToString Term where
   toString :=
     let rec toStr
       | .Var t => t
       | .Int v => s!"#x{v.toInt32.toBitVec.toHex}"
+      | .Long v => s!"#x{v.toInt64.toBitVec.toHex}"
       | .Eq t1 t2 => s!"(= {toStr t1} {toStr t2})"
       | .Not b => s!"(not {toStr b})"
-      | .AddI t1 t2 => s!"(bvadd {toStr t1} {toStr t2})"
+      | .Add t1 t2 => s!"(bvadd {toStr t1} {toStr t2})"
+      | .Sub t1 t2 => s!"(bvsub {toStr t1} {toStr t2})"
+      | .Mul t1 t2 => s!"(bvmul {toStr t1} {toStr t2})"
+      | .Shl t1 t2 => s!"(bvshl {toStr t1} {toStr t2})"
+      | .Shr t1 t2 => s!"(bvashr {toStr t1} {toStr t2})"
+      | .I2L t => s!"((_ sign_extend 32) {toStr t})"
+      | .L2I t => s!"((_ extract 31 0) {toStr t})"
     toStr
 
 inductive Stat where

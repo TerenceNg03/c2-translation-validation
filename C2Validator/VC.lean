@@ -42,16 +42,23 @@ def newStat (stat : Stat) : VC PUnit :=
   modify $ λ (.Program vars stats) ↦ Program.Program vars (Array.push stats stat)
 
 def genNodeVar' (idx : Nat) : Node → VC (String × Z3Type)
-| .ParmInt => do
-  let name ← registerVar idx Z3Type.Int
-  pure (name, Z3Type.Int)
 | .Return _ => throw $ ValError.VC s!"Call genNodeVar on return node."
-| .AddI _ _ => do
-  let name ← registerVar idx Z3Type.Int
-  pure (name, Z3Type.Int)
+| .ParmInt
+| .AddI _ _
+| .SubI _ _
+| .MulI _ _
+| .LShiftI _ _
+| .ConvL2I _
+| .RShiftI _ _
 | .ConI _ => do
   let name ← registerVar idx Z3Type.Int
   pure (name, Z3Type.Int)
+| .RShiftL _ _
+| .ConvI2L _
+| .MulL _ _
+| .ConL _ => do
+  let name ← registerVar idx Z3Type.Long
+  pure (name, Z3Type.Long)
 def genNodeVar := Function.uncurry genNodeVar'
 
 def genRet (idx : Nat) (ty : Z3Type) : Node → VC String
@@ -61,19 +68,43 @@ def genRet (idx : Nat) (ty : Z3Type) : Node → VC String
 def genNode (idx : Nat) (node : Node) : VC PUnit :=
   match node with
   | .ParmInt => pure ()
-  | .AddI x y => do
+  | .AddI x y => bin x y Add
+  | .SubI x y => bin x y Sub
+  | .LShiftI x y => bin x y Shl
+  | .MulL x y | .MulI x y => bin x y Mul
+  | .RShiftI x y => bin x y Shr
+  /- RShiftL take Long << Int in java and requires conversion. -/
+  | .RShiftL x y => do
     let x ← genNodeVar x
     let y ← genNodeVar y
     let this ← genNodeVar (idx, node)
     newStat $ Assert $ Eq
-      (Var this.fst) (AddI (Var x.fst) (Var y.fst))
+      (Var this.fst) (Shr (Var x.fst) (I2L (Var y.fst)))
+  | .ConvL2I i => do
+    let x ← genNodeVar i
+    let this ← genNodeVar (idx, node)
+    newStat $ Assert $ Eq (Var this.fst) (L2I (Var x.fst))
+  | .ConvI2L i => do
+    let x ← genNodeVar i
+    let this ← genNodeVar (idx, node)
+    newStat $ Assert $ Eq (Var this.fst) (I2L (Var x.fst))
   | .ConI v => do
     let this ← genNodeVar (idx, node)
     newStat $ Assert $ Eq (Var this.fst) (Int v)
+  | .ConL v => do
+    let this ← genNodeVar (idx, node)
+    newStat $ Assert $ Eq (Var this.fst) (Long v)
   | .Return prev=> do
     let (prev, ty) ← genNodeVar prev
     let this ← genRet idx ty node
     newStat $ Assert $ Eq (Var prev) (Var this)
+  where
+    bin (x : Nat × Node) (y : Nat × Node) (op : Term → Term → Term): VC PUnit := do
+    let x ← genNodeVar x
+    let y ← genNodeVar y
+    let this ← genNodeVar (idx, node)
+    newStat $ Assert $ Eq
+      (Var this.fst) (op (Var x.fst) (Var y.fst))
 
 def genNodes : Graph → VC PUnit
 | .Graph _ nodes => Lean.RBMap.forM genNode nodes
@@ -92,9 +123,9 @@ def connectGraphs : Graph → VC PUnit
     | .Return (idx', node') => do
         let ty ← Prod.snd <$> genNodeVar (idx', node')
         let pre ← withPre $ genRet idx ty node
-        let post ← withPre $ genRet idx ty node
+        let post ← withPost $ genRet idx ty node
         newStat $ Assert $ Not $ Eq (Var pre) (Var post)
-    | .AddI _ _ | .ConI _ => pure ()
+    | _ => pure ()
 
 def vcGen (g₁ : Graph) (g₂ : Graph) : Error Program :=
     let gen := do
