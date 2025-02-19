@@ -20,3 +20,4 @@ lean_exe «Test» where
   exeName := "c2validator-test"
 
 require "leanprover-community" / «mathlib»
+require "leanprover" / «Cli»

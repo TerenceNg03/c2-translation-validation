@@ -93,7 +93,7 @@ instance : ToString Program where
 
 infixl:65 "∨" => Program.join
 
-def validate (path : System.FilePath) (program : Program) : ExceptT ValError IO PUnit := do
+def validate (path : System.FilePath) (program : Program) : IO (Error PUnit) := do
   IO.println s!"[INFO] Generating SMT file..."
   let path ← IO.FS.realPath path
   let smt := path.withExtension "smt"
@@ -105,9 +105,9 @@ def validate (path : System.FilePath) (program : Program) : ExceptT ValError IO 
   }
   let .mk _ output _ ← IO.Process.output command
   if "unsat".isPrefixOf output
-    then pure ()
+    then pure $ pure ()
   else if "sat".isPrefixOf output
-    then throw $ ValError.CounterExample (output.drop 4)
+    then pure $ throw $ ValError.CounterExample (output.drop 4)
   else if "timeout".isPrefixOf output
-    then throw $ ValError.Timeout
-  else throw $ ValError.Z3 output
+    then pure $ throw $ ValError.Timeout
+  else pure $ throw $ ValError.Z3 output
