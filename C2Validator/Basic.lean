@@ -39,7 +39,7 @@ def verify (path : System.FilePath) : IO UInt32 := do
   | .error e => pure $ throw e
   match run with
   | .ok _ => do
-    IO.println s!"[🟢Verified] {path}"
+    IO.println s!"[🟢][Verified] {path}"
     pure 0
   | .error e => do
     IO.eprintln s!"{e}"

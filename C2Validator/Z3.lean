@@ -80,7 +80,7 @@ instance : ToString Program where
   let decls := Lean.RBMap.fold decl "" vars
   let stats := Array.foldl (λ xs x ↦ s!"{xs}\n{x}") "" stats
   let conds := Array.foldl (λ xs x ↦ s!"{xs}\n    {x}") "" conds
-  s!"{decls}{stats}\n\n(assert (not (and{conds}\n)))\n\n(check-sat)\n(get-model)\n"
+  s!"{decls}{stats}\n\n(assert (not (and true {conds}\n)))\n\n(check-sat)\n(get-model)\n"
 
 infixl:65 "∨" => Program.join
 

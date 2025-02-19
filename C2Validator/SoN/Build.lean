@@ -42,11 +42,13 @@ partial def expectNode (des : Nat) (idx : Nat) : BuildM (Nat × Node) := do
   match src with
   | some (.Edge src _ _) => do
     let node ← buildNode src
-    pure (src, node)
+    match node with
+    | some node => pure (src, node)
+    | none => throw $ ValError.Parse s!"Node {idx} does not generate value but required by an edge from {des}."
   | none => throw $ ValError.Parse s!"Missing edge to Node {des} targeting slot {idx}."
 
 /- Recursively build nodes and save the result-/
-partial def buildNode (idx : Nat) :  BuildM Node := do
+partial def buildNode (idx : Nat) :  BuildM (Option Node) := do
   let parsed ← get
   let (nodes, _) ← read
   match Lean.RBMap.find? parsed idx with
@@ -56,15 +58,17 @@ partial def buildNode (idx : Nat) :  BuildM Node := do
     | none => throw $ ValError.Parse s!"Edge pointing to missing node {idx}."
     | some node => do
       let node ← buildNode' idx node
-      modify $ λ m ↦ Lean.RBMap.insert m idx node
+      match node with
+      | some node => modify $ λ m ↦ Lean.RBMap.insert m idx node
+      | none => pure ()
       pure node
 
-partial def buildNode' (idx : Nat) : NodeRaw → BuildM Node
+partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
 | .ParmInt => pure $ Node.ParmInt
 | .Return => do
   let ctrl ← expectNode idx 0
-  let input ← expectNode idx 5
-  pure $ Node.Return ctrl input
+  let input ← tryCatch (some <$> expectNode idx 5) λ _ ↦ pure none
+  pure $ input.map λ input ↦ Node.Return ctrl input
 | .AddI => bin Node.AddI
 | .SubI |.CmpI => bin Node.SubI
 | .LShiftI => bin Node.LShiftI
@@ -73,8 +77,8 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM Node
 | .MulL => bin Node.MulL
 | .MulI => bin Node.MulI
 | .DivI => bin Node.DivI
-| .ConvI2L => expectNode idx 1 >>= pure ∘ Node.ConvI2L
-| .ConvL2I => expectNode idx 1 >>= pure ∘ Node.ConvL2I
+| .ConvI2L => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvI2L
+| .ConvL2I => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvL2I
 | .Bool cmp => do
     let x ← expectNode idx 1
     pure $ Node.CmpResult x cmp
