@@ -13,7 +13,7 @@ def compileIR (path : System.FilePath) : IO (Error String):= do
       { cmd := "java"
       , args := #[ "-Xcomp"
                 , s!"-XX:CompileCommand=compileonly,{jClass}::{jClass.toLower}"
-                , "-XX:PrintIdealGraphLevel=1"
+                , "-XX:PrintIdealGraphLevel=6"
                 , s!"-XX:PrintIdealGraphFile={xml}"
                 , path.toString
                 ]

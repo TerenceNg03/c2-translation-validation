@@ -26,7 +26,8 @@ inductive Node where
 | ConB (val : Bool)
 | If (prev : Nat × Node) (cond : Nat × Node)
 | CmpResult (prev : Nat × Node) (cmp : Cmp)
-| PassCtrl (prev : Nat × Node)
+| IfTrue (prev : Nat × Node)
+| IfFalse (prev : Nat × Node)
 deriving Repr, Nonempty
 
 inductive Graph where
@@ -89,9 +90,8 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
 | .ConI v => pure $ Node.ConI v
 | .ConL v => pure $ Node.ConL v
 | .ProjCtrl | .ParmCtrl => pure $ Node.ConB true
-| .IfTrue | .IfFalse => do
-    let prev ← expectNode idx 0
-    pure $ Node.PassCtrl prev
+| .IfTrue => expectNode idx 0 >>= pure ∘ some ∘ Node.IfTrue
+| .IfFalse => expectNode idx 0 >>= pure ∘ some ∘ Node.IfFalse
 where
   bin (op : Nat × Node → Nat × Node → Node) : BuildM Node := do
   let x ← expectNode idx 1

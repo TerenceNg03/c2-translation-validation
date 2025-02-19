@@ -79,12 +79,15 @@ def genNodeVar' (idx : Nat) : Node → VC (String × Z3Type)
 | .ConL _ => do
   let name ← registerVar idx Z3Type.Long
   pure (name, Z3Type.Long)
-| .PassCtrl _
-| .If _ _
+| .IfTrue _
+| .IfFalse _
 | .CmpResult _ _
 | .ConB _ => do
   let name ← registerVar idx Z3Type.Bool
   pure (name, Z3Type.Bool)
+| .If _ _  => do
+  let name ← registerVar idx Z3Type.IfResult
+  pure (name, Z3Type.IfResult)
 def genNodeVar := Function.uncurry genNodeVar'
 
 def genRet (idx : Nat) (ty : Z3Type) : Node → VC String
@@ -104,11 +107,15 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
     let prev ← genNodeVar prev
     let cond ← genNodeVar cond
     let this ← genNodeVar (idx, node)
-    newStat $ Assert $ Eq (Var this.fst) (And (Var prev.fst) (Var cond.fst))
-  | .PassCtrl i => do
+    newStat $ Assert $ Eq (Var this.fst) (BuildIf (Var prev.fst) (Var cond.fst))
+  | .IfTrue i => do
     let x ← genNodeVar i
     let this ← genNodeVar (idx, node)
-    newStat $ Assert $ Eq (Var this.fst) (Var x.fst)
+    newStat $ Assert $ Eq (Var this.fst) (And (Prev (Var x.fst)) (Cond (Var x.fst)))
+  | .IfFalse i => do
+    let x ← genNodeVar i
+    let this ← genNodeVar (idx, node)
+    newStat $ Assert $ Eq (Var this.fst) (And (Prev (Var x.fst)) (Not (Cond (Var x.fst))))
   | .ConB b => do
     let this ← genNodeVar (idx, node)
     newStat $ Assert $ Eq (Var this.fst) (if b then True else False)

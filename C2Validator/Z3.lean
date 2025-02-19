@@ -9,12 +9,14 @@ inductive Z3Type where
 | Int
 | Long
 | Bool
+| IfResult
 deriving Inhabited, BEq
 
 instance : ToString Z3Type where
   toString | .Int => "(_ BitVec 32)"
            | .Long => "(_ BitVec 64)"
            | .Bool => "Bool"
+           | .IfResult => "IfResult"
 
 inductive Term where
 | Var (name : String)
@@ -22,6 +24,9 @@ inductive Term where
 | Long (val : Int)
 | True
 | False
+| BuildIf (t1 : Term) (t2 : Term)
+| Prev (p : Term)
+| Cond (p : Term)
 | Eq (t1 : Term) (t2: Term)
 | If (cond : Term) (t1 : Term) (t2: Term)
 | Not (b : Term)
@@ -42,6 +47,9 @@ instance : ToString Term where
       | .Long v => s!"#x{v.toInt64.toBitVec.toHex}"
       | .True => "true"
       | .False => "false"
+      | .BuildIf t1 t2 => s!"(if-result {toStr t1} {toStr t2})"
+      | .Prev p => s!"(prev {toStr p})"
+      | .Cond p => s!"(cond {toStr p})"
       | .Eq t1 t2 => s!"(= {toStr t1} {toStr t2})"
       | .If cond t1 t2 => s!"(if {toStr cond} {toStr t1} {toStr t2})"
       | .Not b => s!"(not {toStr b})"
@@ -80,7 +88,8 @@ instance : ToString Program where
   let decls := Lean.RBMap.fold decl "" vars
   let stats := Array.foldl (λ xs x ↦ s!"{xs}\n{x}") "" stats
   let conds := Array.foldl (λ xs x ↦ s!"{xs}\n    {x}") "" conds
-  s!"{decls}{stats}\n\n(assert (not (and true {conds}\n)))\n\n(check-sat)\n(get-model)\n"
+  let dataType := "(declare-datatypes () ((IfResult (if-result (prev Bool) (cond Bool)))))\n\n"
+  s!"{dataType}{decls}{stats}\n\n(assert (not (and true {conds}\n)))\n\n(check-sat)\n(get-model)\n"
 
 infixl:65 "∨" => Program.join
 
