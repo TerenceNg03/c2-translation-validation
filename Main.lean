@@ -3,22 +3,37 @@ import Cli
 
 open Cli
 
-
-def validate (p : Parsed) : IO UInt32 := do
+def validateXML (p: Parsed) : IO UInt32 := do
   let file : String := p.positionalArg! "file" |>.as! String
-  if p.hasFlag "xml"
-  then verifyXML file
-  else compileAndVerify file
+  verifyXML file
 
-def c2validator : Cmd := `[Cli|
-  c2validator VIA validate; ["0.0.1"]
-  "Translation validation on HotSpot C2 compiler."
-
-  FLAGS:
-    xml;                 "Verify XML file instead of Java file."
+def xml : Cmd := `[Cli|
+  xml VIA validateXML;
+  "Verify a XML file."
 
   ARGS:
     file : String;      "File to verify."
+]
+
+def validate (p : Parsed) : IO UInt32 := do
+  let file : String := p.positionalArg! "file" |>.as! String
+  let level := λ x ↦ x |>.as! Nat <$> p.flag? "level" |>.getD 1
+  let method := λ x ↦ x |>.as! String <$> p.flag? "method"
+  compileAndVerify level method file
+
+def c2validator : Cmd := `[Cli|
+  c2validator VIA validate;
+  "Translation validation on HotSpot C2 compiler."
+
+  FLAGS:
+    level : Nat;       "Ideal graph level."
+    method : String;    "Target method."
+
+  ARGS:
+    file : String;      "File to verify."
+
+  SUBCOMMANDS:
+    xml
 ]
 
 def main (args : List String) : IO UInt32 := do

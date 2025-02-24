@@ -2,7 +2,7 @@ import C2Validator
 
 def sequence (arr : Array System.FilePath) : IO String := do
   let failed ← flip Array.filterMapM arr λ name ↦ do
-    let code ← compileAndVerify name
+    let code ← compileAndVerify 1 none name
     if code == 1 then
       pure $ some name
     else

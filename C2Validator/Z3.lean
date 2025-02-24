@@ -107,7 +107,10 @@ def validate (path : System.FilePath) (program : Program) : IO (Error PUnit) := 
   if "unsat".isPrefixOf output
     then pure $ pure ()
   else if "sat".isPrefixOf output
-    then pure $ throw $ ValError.CounterExample (output.drop 4)
+    then do
+      let outputFile := path.withExtension "ce.smt"
+      IO.FS.writeFile outputFile (output.drop 4)
+      pure $ throw $ ValError.CounterExample outputFile
   else if "timeout".isPrefixOf output
     then pure $ throw $ ValError.Timeout
   else pure $ throw $ ValError.Z3 output

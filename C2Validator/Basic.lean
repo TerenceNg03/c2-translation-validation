@@ -5,15 +5,16 @@ import C2Validator.Z3
 
 open ValError
 
-def compileIR (path : System.FilePath) : IO (Error System.FilePath):= do
+def compileIR (level : Nat) (method : Option String) (path : System.FilePath) : IO (Error System.FilePath):= do
   let path ← IO.FS.realPath path
   let xml := path.withExtension "xml"
   let jClass := path.fileStem.get!
+  let method := method.getD s!"{jClass}::{jClass.toLower}"
   let command : IO.Process.SpawnArgs :=
       { cmd := "java"
       , args := #[ "-Xcomp"
-                , s!"-XX:CompileCommand=compileonly,{jClass}::{jClass.toLower}"
-                , "-XX:PrintIdealGraphLevel=1"
+                , s!"-XX:CompileCommand=compileonly,{method}"
+                , s!"-XX:PrintIdealGraphLevel={level}"
                 , s!"-XX:PrintIdealGraphFile={xml}"
                 , path.toString
                 ]
@@ -37,7 +38,7 @@ def showResult (path : System.FilePath) (result : Error PUnit) : IO UInt32 :=
     | .Unsupported s => s!"[🟡][Unsupported] {s}"
     | .Compile s => s!"[🔴][Compiler Error] Can not compile file: {s}"
     | .Undecidable => s!"[🟡][Undecidable Problem] loop"
-    | .CounterExample ce => s!"[🔴][Counter Example] \n{ce}"
+    | .CounterExample ce => s!"[🔴][Counter Example] Counter example available at {ce}"
     | .Z3 s => s!"[🔴][Z3 Error] {s}"
     | .VC s => s!"[🔴][Verfi Cond Gen Error] {s}"
     | .Parse s => s!"[🔴][Parsing Error] {s}"
@@ -60,8 +61,8 @@ def verifyXML (path : System.FilePath) : IO UInt32 := do
   let result ← verifyXML' path
   showResult path result
 
-def compileAndVerify (path : System.FilePath) : IO UInt32 := do
-  let xml ← compileIR path
+def compileAndVerify (level : Nat) (method : Option String) (path : System.FilePath) : IO UInt32 := do
+  let xml ← compileIR level method path
   let result ← match xml with
     | .ok xml => verifyXML' xml
     | .error e => pure $ throw e
