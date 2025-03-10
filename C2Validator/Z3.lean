@@ -5,32 +5,65 @@ open ValError
 
 namespace Z3
 
-inductive Z3Type where
+inductive Z3TypeBasic where
 | Int
 | Long
 | Bool
-| IfResult
-deriving Inhabited, BEq
+| SideEffect
+deriving Ord, BEq
+
+instance : ToString Z3TypeBasic where
+  toString
+        | .Int => "(_ BitVec 32)"
+        | .Long => "(_ BitVec 64)"
+        | .Bool => "Bool"
+        | .SideEffect => "Int"
+
+
+inductive Z3Type where
+| Basic (val : Z3TypeBasic)
+| Tuple (val : List Z3TypeBasic)
+deriving BEq
+
+instance : Ord Z3Type where
+  compare
+    | .Basic x, .Basic y   => compare x y
+    | .Basic _, .Tuple _   => Ordering.lt
+    | .Tuple _, .Basic _   => Ordering.gt
+    | .Tuple x, .Tuple y   =>
+      if List.lex x y λ x y ↦ compare x y == .lt then .lt else if x == y then .eq else .gt
+
 
 instance : ToString Z3Type where
-  toString | .Int => "(_ BitVec 32)"
-           | .Long => "(_ BitVec 64)"
-           | .Bool => "Bool"
-           | .IfResult => "IfResult"
+  toString
+      | .Basic val => s!"{val}"
+      | .Tuple arr =>
+            let arr := arr.map (λ x ↦ s!"{x}")
+            let arr := arr.map (λ t ↦ t.toList.filter Char.isAlphanum)
+            let arr := arr.map String.mk
+            let arr := String.intercalate "-" arr
+            s!"T-{arr}"
+
+def ZInt := Z3Type.Basic Z3TypeBasic.Int
+def ZLong := Z3Type.Basic Z3TypeBasic.Long
+def ZBool := Z3Type.Basic Z3TypeBasic.Bool
+def ZSideEffect := Z3Type.Basic Z3TypeBasic.SideEffect
+
 
 inductive Term where
 | Var (name : String)
+| IdentitySideEffect
 | Int (val : Int)
 | Long (val : Int)
 | True
 | False
-| BuildIf (t1 : Term) (t2 : Term)
-| Prev (p : Term)
-| Cond (p : Term)
+| Mk (ty : Z3Type) (params : List Term)
+| Index (t : Term) (idx : Nat)
 | Eq (t1 : Term) (t2: Term)
 | If (cond : Term) (t1 : Term) (t2: Term)
 | Not (b : Term)
 | And (t1 : Term) (t2 : Term)
+| AndAll (ts: List Term)
 | Add (t1 : Term) (t2 : Term)
 | Sub (t1 : Term) (t2 : Term)
 | Shl (t1 : Term) (t2 : Term)
@@ -39,57 +72,109 @@ inductive Term where
 | Div (t1 : Term) (t2 : Term)
 | L2I (t: Term)
 | I2L (t: Term)
-instance : ToString Term where
-  toString :=
-    let rec toStr
+| App (func: String) (params : List Term)
+
+partial def toStrTerm : Term → String
       | .Var t => t
       | .Int v => s!"#x{v.toInt32.toBitVec.toHex}"
+      | .IdentitySideEffect => "0"
       | .Long v => s!"#x{v.toInt64.toBitVec.toHex}"
       | .True => "true"
       | .False => "false"
-      | .BuildIf t1 t2 => s!"(if-result {toStr t1} {toStr t2})"
-      | .Prev p => s!"(prev {toStr p})"
-      | .Cond p => s!"(cond {toStr p})"
-      | .Eq t1 t2 => s!"(= {toStr t1} {toStr t2})"
-      | .If cond t1 t2 => s!"(if {toStr cond} {toStr t1} {toStr t2})"
-      | .Not b => s!"(not {toStr b})"
-      | .And t1 t2 => s!"(and {toStr t1} {toStr t2})"
-      | .Add t1 t2 => s!"(bvadd {toStr t1} {toStr t2})"
-      | .Sub t1 t2 => s!"(bvsub {toStr t1} {toStr t2})"
-      | .Mul t1 t2 => s!"(bvmul {toStr t1} {toStr t2})"
-      | .Div t1 t2 => s!"(bvsdiv {toStr t1} {toStr t2})"
-      | .Shl t1 t2 => s!"(bvshl {toStr t1} {toStr t2})"
-      | .Shr t1 t2 => s!"(bvashr {toStr t1} {toStr t2})"
-      | .I2L t => s!"((_ sign_extend 32) {toStr t})"
-      | .L2I t => s!"((_ extract 31 0) {toStr t})"
-    toStr
+      | .Mk ty params =>
+        let params := String.intercalate " " $ params.map toStrTerm
+        s!"(mk-{ty} {params})"
+      | .Index t n => s!"(_{n} {toStrTerm t})"
+      | .Eq t1 t2 => s!"(= {toStrTerm t1} {toStrTerm t2})"
+      | .If cond t1 t2 => s!"(if {toStrTerm cond} {toStrTerm t1} {toStrTerm t2})"
+      | .Not b => s!"(not {toStrTerm b})"
+      | .And t1 t2 => s!"(and {toStrTerm t1} {toStrTerm t2})"
+      | .AndAll ts =>
+          let ts := String.intercalate " " $ ts.map λ x ↦ s!"\n{toStrTerm x}"
+          s!"(and {ts})"
+      | .Add t1 t2 => s!"(bvadd {toStrTerm t1} {toStrTerm t2})"
+      | .Sub t1 t2 => s!"(bvsub {toStrTerm t1} {toStrTerm t2})"
+      | .Mul t1 t2 => s!"(bvmul {toStrTerm t1} {toStrTerm t2})"
+      | .Div t1 t2 => s!"(bvsdiv {toStrTerm t1} {toStrTerm t2})"
+      | .Shl t1 t2 => s!"(bvshl {toStrTerm t1} {toStrTerm t2})"
+      | .Shr t1 t2 => s!"(bvashr {toStrTerm t1} {toStrTerm t2})"
+      | .I2L t => s!"((_ sign_extend 32) {toStrTerm t})"
+      | .L2I t => s!"((_ extract 31 0) {toStrTerm t})"
+      | .App func params =>
+        let params := String.intercalate " " $ params.map toStrTerm
+        s!"({func} {params})"
+
+instance : ToString Term where
+  toString := toStrTerm
 
 inductive Stat where
 | Assert (x : Term)
+| DeclVar (name : String) (ty : Z3Type)
+| DeclDataType (ty : Z3Type)
+| DeclFunc (name : String) (params: List Z3Type) (ret: Z3Type)
 | CheckSAT
 | GetModel
 
 instance : ToString Stat where
   toString
     | .Assert x => s!"(assert {x})"
+    | .DeclVar name ty => s!"(declare-const {name} {ty})"
+    | .DeclDataType ty@(.Tuple ts)=>
+        let constructors := (ts.zipIdx 1).map (λ (t, idx) ↦ s!"(_{idx} {t})")
+        let constructors := String.intercalate " " constructors
+        s!"(declare-datatypes () (({ty} (mk-{ty} {constructors}))))"
+    | .DeclDataType _ => ""
+    | .DeclFunc name params ret =>
+      let params := String.intercalate " " $ params.map λ param ↦ s!"{param}"
+      s!"(declare-fun {name} ({params}) {ret})"
     | .CheckSAT => "(check-sat)"
     | .GetModel => "(get-model)"
 
-inductive Program where
-| Program (vars : Lean.RBMap String Z3Type compare) (stats : Array Stat) (conditions : Array Term)
+structure Program where
+    (types : Lean.RBTree Z3Type compare)
+    (funcs: Lean.RBMap String (List Z3Type × Z3Type) compare)
+    (vars : Lean.RBMap String Z3Type compare)
+    (precondition : List Term)
+    (postcondition : List Stat)
+    (parameter : List Stat)
+    (outputPre : List Term)
+    (outputPost : List Term)
 
 def Program.empty : Z3.Program :=
-  Program.Program Lean.RBMap.empty Array.empty Array.empty
+    {types := default
+    , funcs := (Lean.RBMap.fromList [("join", ([ZSideEffect, ZSideEffect], ZSideEffect))] compare)
+    , vars := default
+    , precondition := default
+    , postcondition := default
+    , parameter := default
+    , outputPre := default
+    , outputPost := default
+    }
+
+def collectSideEffects : List Term →  Term
+  | [] => .IdentitySideEffect
+  | (x::xs) => .App "join" [x, collectSideEffects xs]
+
+def axioms : String := "(assert (forall ((x Int)) (= x (join x 0))))\n(assert (forall ((x Int)) (= x (join 0 x))))"
 
 instance : ToString Program where
-  toString
-  | .Program vars stats conds =>
-  let decl xs x t := s!"(declare-const {x} {t})\n{xs}"
-  let decls := Lean.RBMap.fold decl "" vars
-  let stats := Array.foldl (λ xs x ↦ s!"{xs}\n{x}") "" stats
-  let conds := Array.foldl (λ xs x ↦ s!"{xs}\n    {x}") "" conds
-  let dataType := "(declare-datatypes () ((IfResult (if-result (prev Bool) (cond Bool)))))\n\n"
-  s!"{dataType}{decls}{stats}\n\n(assert (not (and true {conds}\n)))\n\n(check-sat)\n(get-model)\n"
+  toString p :=
+  let types := p.types.toList.map Stat.DeclDataType
+  let funcs := p.funcs.toList.map λ (x,y,z) ↦ Stat.DeclFunc x y z
+  let vars := p.vars.toList.map $ Function.uncurry Stat.DeclVar
+  let oPre := collectSideEffects p.outputPre
+  let oPost := collectSideEffects p.outputPost
+  let postrequisite := Term.AndAll $ Term.Eq oPre oPost :: p.precondition
+  let vc := Stat.Assert $ .Not postrequisite
+  let join (xs: List Stat) := String.intercalate "\n" $ xs.map λ x ↦ s!"{x}"
+  s!"; Type Declarations\n{join types}\n\n"
+    ++ s!"; Function Declarations\n{join funcs}\n\n"
+    ++ s!"; Side Effect Axioms\n{axioms}\n\n"
+    ++ s!"; Variable Declarations\n{join vars}\n\n"
+    ++ s!"; VC Parameters\n{join p.parameter}\n\n"
+    ++ s!"; VC Postconditions\n{join p.postcondition}\n\n"
+    ++ s!"; VC\n{vc}\n\n"
+    ++ s!"{Stat.CheckSAT}\n{Stat.GetModel}"
 
 infixl:65 "∨" => Program.join
 
