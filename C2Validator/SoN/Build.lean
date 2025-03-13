@@ -10,12 +10,18 @@ namespace SoN
 
 inductive Node where
 | ParmInt
-| Return (ctrl : Nat × Node) (val : Nat × Node)
+| ParmLong
+| ParmFloat
+| ParmIO
+| Return (ctrl : Nat × Node) (io : Nat × Node) (val : Nat × Node)
 | AddI (x : Nat × Node) (y : Nat × Node)
+| AddL (x : Nat × Node) (y : Nat × Node)
 | SubI (x : Nat × Node) (y : Nat × Node)
+| SubF (x : Nat × Node) (y : Nat × Node)
 | LShiftI (x : Nat × Node) (y : Nat × Node)
 | RShiftI (x : Nat × Node) (y : Nat × Node)
 | RShiftL (x : Nat × Node) (y : Nat × Node)
+| LShiftL (x : Nat × Node) (y : Nat × Node)
 | ConvI2L (x : Nat × Node)
 | ConvL2I (x : Nat × Node)
 | MulL (x : Nat × Node) (y : Nat × Node)
@@ -23,6 +29,7 @@ inductive Node where
 | DivI (x : Nat × Node) (y : Nat × Node)
 | ConL (val: Int)
 | ConI (val : Int)
+| ConF (val : FP32)
 | ConB (val : Bool)
 | If (prev : Nat × Node) (cond : Nat × Node)
 | CmpResult (prev : Nat × Node) (cmp : Cmp)
@@ -66,15 +73,22 @@ partial def buildNode (idx : Nat) :  BuildM (Option Node) := do
 
 partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
 | .ParmInt => pure $ Node.ParmInt
+| .ParmLong => pure $ Node.ParmLong
+| .ParmFloat => pure $ Node.ParmFloat
+| .ParmIO => pure $ Node.ParmIO
 | .Return => do
   let ctrl ← expectNode idx 0
+  let io ← expectNode idx 1
   let input ← tryCatch (some <$> expectNode idx 5) λ _ ↦ pure none
-  pure $ input.map λ input ↦ Node.Return ctrl input
+  pure $ input.map λ input ↦ Node.Return ctrl io input
 | .AddI => bin Node.AddI
+| .AddL => bin Node.AddL
 | .SubI |.CmpI => bin Node.SubI
+| .SubF => bin Node.SubF
 | .LShiftI => bin Node.LShiftI
 | .RShiftI => bin Node.RShiftI
 | .RShiftL => bin Node.RShiftL
+| .LShiftL => bin Node.LShiftL
 | .MulL => bin Node.MulL
 | .MulI => bin Node.MulI
 | .DivI => bin Node.DivI
@@ -89,6 +103,7 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
     pure $ Node.If x y
 | .ConI v => pure $ Node.ConI v
 | .ConL v => pure $ Node.ConL v
+| .ConF v => pure $ Node.ConF v
 | .ProjCtrl | .ParmCtrl => pure $ Node.ConB true
 | .IfTrue => expectNode idx 0 >>= pure ∘ some ∘ Node.IfTrue
 | .IfFalse => expectNode idx 0 >>= pure ∘ some ∘ Node.IfFalse

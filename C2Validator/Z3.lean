@@ -1,5 +1,6 @@
 import Lean.Data.RBTree
 import C2Validator.ValError
+import C2Validator.SoN.Float
 
 open ValError
 
@@ -8,6 +9,7 @@ namespace Z3
 inductive Z3TypeBasic where
 | Int
 | Long
+| FP32
 | Bool
 | SideEffect
 deriving Ord, BEq
@@ -16,6 +18,7 @@ instance : ToString Z3TypeBasic where
   toString
         | .Int => "(_ BitVec 32)"
         | .Long => "(_ BitVec 64)"
+        | .FP32 => "Float32"
         | .Bool => "Bool"
         | .SideEffect => "Int"
 
@@ -46,6 +49,7 @@ instance : ToString Z3Type where
 
 def ZInt := Z3Type.Basic Z3TypeBasic.Int
 def ZLong := Z3Type.Basic Z3TypeBasic.Long
+def ZFP32 := Z3Type.Basic Z3TypeBasic.FP32
 def ZBool := Z3Type.Basic Z3TypeBasic.Bool
 def ZSideEffect := Z3Type.Basic Z3TypeBasic.SideEffect
 
@@ -55,6 +59,7 @@ inductive Term where
 | IdentitySideEffect
 | Int (val : Int)
 | Long (val : Int)
+| FP32 (val : SoN.FP32)
 | True
 | False
 | Mk (ty : Z3Type) (params : List Term)
@@ -66,8 +71,11 @@ inductive Term where
 | AndAll (ts: List Term)
 | Add (t1 : Term) (t2 : Term)
 | Sub (t1 : Term) (t2 : Term)
-| Shl (t1 : Term) (t2 : Term)
-| Shr (t1 : Term) (t2 : Term)
+| SubF (t1 : Term) (t2 : Term)
+| ShlI (t1 : Term) (t2 : Term)
+| ShlL (t1 : Term) (t2 : Term)
+| ShrI (t1 : Term) (t2 : Term)
+| ShrL (t1 : Term) (t2 : Term)
 | Mul (t1 : Term) (t2 : Term)
 | Div (t1 : Term) (t2 : Term)
 | L2I (t: Term)
@@ -79,6 +87,7 @@ partial def toStrTerm : Term → String
       | .Int v => s!"#x{v.toInt32.toBitVec.toHex}"
       | .IdentitySideEffect => "0"
       | .Long v => s!"#x{v.toInt64.toBitVec.toHex}"
+      | .FP32 s => s!"(fp #b{s.take 1} #b{(s.drop 1).take 8} #b{s.drop 9})"
       | .True => "true"
       | .False => "false"
       | .Mk ty params =>
@@ -94,10 +103,13 @@ partial def toStrTerm : Term → String
           s!"(and {ts})"
       | .Add t1 t2 => s!"(bvadd {toStrTerm t1} {toStrTerm t2})"
       | .Sub t1 t2 => s!"(bvsub {toStrTerm t1} {toStrTerm t2})"
+      | .SubF t1 t2 => s!"(fp.sub roundNearestTiesToEven {toStrTerm t1} {toStrTerm t2})"
       | .Mul t1 t2 => s!"(bvmul {toStrTerm t1} {toStrTerm t2})"
       | .Div t1 t2 => s!"(bvsdiv {toStrTerm t1} {toStrTerm t2})"
-      | .Shl t1 t2 => s!"(bvshl {toStrTerm t1} {toStrTerm t2})"
-      | .Shr t1 t2 => s!"(bvashr {toStrTerm t1} {toStrTerm t2})"
+      | .ShlI t1 t2 => s!"(bvshl {toStrTerm t1} (bvand #x0000001f {toStrTerm t2}))"
+      | .ShrI t1 t2 => s!"(bvashr {toStrTerm t1} (bvand #x0000001f {toStrTerm t2}))"
+      | .ShlL t1 t2 => s!"(bvshl {toStrTerm t1} (bvand #x000000000000003f  {toStrTerm t2}))"
+      | .ShrL t1 t2 => s!"(bvashr {toStrTerm t1} (bvand #x000000000000003f {toStrTerm t2}))"
       | .I2L t => s!"((_ sign_extend 32) {toStrTerm t})"
       | .L2I t => s!"((_ extract 31 0) {toStrTerm t})"
       | .App func params =>

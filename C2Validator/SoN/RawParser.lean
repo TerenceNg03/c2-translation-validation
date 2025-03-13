@@ -1,6 +1,7 @@
 import Lean.Data.Xml
 import C2Validator.SoN.XMLParser
 import C2Validator.ValError
+import C2Validator.SoN.Float
 
 open ValError
 open Lean.Xml
@@ -18,14 +19,21 @@ deriving Repr
 
 inductive NodeRaw where
 | ParmInt
+| ParmLong
+| ParmFloat
 | ParmCtrl
+| ParmIO
 | Return
 | AddI
+| AddL
 | ConI (val: Int)
+| ConF (val: FP32)
 | SubI
+| SubF
 | LShiftI
 | RShiftI
 | RShiftL
+| LShiftL
 | ConvI2L
 | ConvL2I
 | MulL
@@ -62,21 +70,26 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
       let bottomType ← propertyP? "bottom_type"
       match Option.getD bottomType type with
         | "int" => pure $ some (idx, NodeRaw.ParmInt)
+        | "long" => pure $ some (idx, NodeRaw.ParmLong)
+        | "float" => pure $ some (idx, NodeRaw.ParmFloat)
         | "control" => pure $ some (idx, NodeRaw.ParmCtrl)
-        | "abIO"
+        | "abIO" => pure $ some (idx, NodeRaw.ParmIO)
         | "rawptr:BotPTR"
         | "return_address"
         | "memory" => pure none
-        | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
+        | name => throw $ ValError.Unsupported s!"Unknown param node {name} with index {idx}."
     | "Proj" => do
       match type with
         | "control" => pure $ some (idx, NodeRaw.ProjCtrl)
         | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
     | "AddI" => pure $ some (idx, NodeRaw.AddI)
+    | "AddL" => pure $ some (idx, NodeRaw.AddL)
     | "SubI" => pure $ some (idx, NodeRaw.SubI)
+    | "SubF" => pure $ some (idx, NodeRaw.SubF)
     | "LShiftI" => pure $ some (idx, NodeRaw.LShiftI)
     | "RShiftI" => pure $ some (idx, NodeRaw.RShiftI)
     | "RShiftL" => pure $ some (idx, NodeRaw.RShiftL)
+    | "LShiftL" => pure $ some (idx, NodeRaw.LShiftL)
     | "ConvI2L" => pure $ some (idx, NodeRaw.ConvI2L)
     | "ConvL2I" => pure $ some (idx, NodeRaw.ConvL2I)
     | "MulL" => pure $ some (idx, NodeRaw.MulL)
@@ -103,6 +116,11 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
       let val ← match String.toInt? $ bottomType.drop 5 with
         | some i => pure $ some (idx, NodeRaw.ConL i)
         | none => throw $ ValError.Parse s!"Node {idx} ConL has no valid constant value."
+    | "ConF" => do
+      let bottomType ← propertyP "bottom_type"
+      let val ← match toFP32? $ bottomType.drop 6 with
+        | some f => pure $ some (idx, NodeRaw.ConF f)
+        | none => throw $ ValError.Parse s!"Node {idx} ConF has no valid constant value."
     | "Root" | "Con" | "Start" | "Halt" => pure none
     | name => throw $ ValError.Unsupported s!"Unknown node {name} with index {idx}."
 

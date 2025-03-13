@@ -50,7 +50,7 @@ def ifResult : Z3Type := .Tuple [.Bool, .Bool]
 def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
   let (idx, node) := node
   match node with
-    | .Return _ _ => do
+    | .Return _ _ _ => do
       let name ← registerVar idx ZSideEffect
       pure (name, ZSideEffect)
     | .ParmInt
@@ -64,9 +64,15 @@ def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
     | .ConI _ => do
       let name ← registerVar idx ZInt
       pure (name, ZInt)
+    | .ParmIO => do
+      let name ← registerVar idx ZSideEffect
+      pure (name, ZSideEffect)
     | .RShiftL _ _
+    | .LShiftL _ _
     | .ConvI2L _
     | .MulL _ _
+    | .AddL _ _
+    | .ParmLong
     | .ConL _ => do
       let name ← registerVar idx ZLong
       pure (name, ZLong)
@@ -76,6 +82,11 @@ def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
     | .ConB _ => do
       let name ← registerVar idx ZBool
       pure (name, ZBool)
+    | .ParmFloat
+    | .ConF _
+    | .SubF _ _ => do
+      let name ← registerVar idx ZFP32
+      pure (name, ZFP32)
     | .If _ _  => do
       let name ← registerVar idx ifResult
       pure (name, ifResult)
@@ -93,22 +104,23 @@ def withPost : VC α → VC α := ReaderT.adapt λ _ => Stage.post
 
 def genNode (idx : Nat) (node : Node) : VC PUnit :=
   match node with
-  | .ParmInt => do
-    let stage ← read
-    if stage == .pre then
-      let pre ← withPre $ genNodeVar' (idx, node)
-      let post ← withPost $ genNodeVar' (idx, node)
-      modify λ p ↦ {p with parameter := Assert (Eq (Var pre) (Var post)) :: p.parameter }
-    else pure ()
+  | .ParmInt
+  | .ParmLong
+  | .ParmFloat => genParm
+  | .ParmIO => do
+    let this ← genNodeVar' (idx, node)
+    registerPostCond $ Assert $ Eq (Var this) IdentitySideEffect
   | .AddI x y => bin x y Add
+  | .AddL x y => bin x y Add
   | .SubI x y => bin x y Sub
-  | .LShiftI x y => bin x y Shl
+  | .SubF x y => bin x y SubF
+  | .LShiftI x y => bin x y ShlI
   | .MulL x y | .MulI x y => bin x y Mul
   | .DivI x y => do
     bin x y Div
     let y ← genNodeVar' y
     modify λ p ↦ {p with precondition := (Not (Eq (Var y) (Int 0))) :: p.precondition}
-  | .RShiftI x y => bin x y Shr
+  | .RShiftI x y => bin x y ShrI
   | .If prev cond => do
     let prev ← genNodeVar' prev
     let cond ← genNodeVar' cond
@@ -131,7 +143,14 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
     let y ← genNodeVar' y
     let this ← genNodeVar' (idx, node)
     registerPostCond $ Assert $ Eq
-      (Var this) (Shr (Var x) (I2L (Var y)))
+      (Var this) (ShrL (Var x) (I2L (Var y)))
+  /- LShiftL take Long << Int in java and requires conversion. -/
+  | .LShiftL x y => do
+    let x ← genNodeVar' x
+    let y ← genNodeVar' y
+    let this ← genNodeVar' (idx, node)
+    registerPostCond $ Assert $ Eq
+      (Var this) (ShlL (Var x) (I2L (Var y)))
   | .ConvL2I i => do
     let x ← genNodeVar' i
     let this ← genNodeVar' (idx, node)
@@ -146,21 +165,32 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
   | .ConL v => do
     let this ← genNodeVar' (idx, node)
     registerPostCond $ Assert $ Eq (Var this) (Long v)
+  | .ConF f => do
+    let this ← genNodeVar' (idx, node)
+    registerPostCond $ Assert $ Eq (Var this) (FP32 f)
   | .CmpResult v .Ne => do
     let x ← genNodeVar' v
     let this ← genNodeVar' (idx, node)
     registerPostCond $ Assert $ Eq (Var this) (Not (Eq (Var x) (Int 0)))
-  | .Return cond val => do
+  | .Return cond io val => do
     let (val, ty) ← genNodeVar val
-    let (cond, _) ← genNodeVar cond
-    let (this, _) ← genNodeVar (idx, node)
+    let cond ← genNodeVar' cond
+    let io ← genNodeVar' io
+    let this ← genNodeVar' (idx, node)
     registerFunction "return!" [ty] ZSideEffect
-    registerPostCond $ Assert $ Eq (Var this) (If (Var cond) (App "return!" [Var val]) IdentitySideEffect)
+    registerPostCond $ Assert $ Eq (Var this) (If (Var cond) (App "join" [Var io, App "return!" [Var val]]) IdentitySideEffect)
     let stage ← read
     match stage with
       | .pre => modify λ p ↦ {p with outputPre := Var this :: p.outputPre}
       | .post => modify λ p ↦ {p with outputPost := Var this :: p.outputPost}
   where
+    genParm := do
+      let stage ← read
+      if stage == .pre then
+        let pre ← withPre $ genNodeVar' (idx, node)
+        let post ← withPost $ genNodeVar' (idx, node)
+        modify λ p ↦ {p with parameter := Assert (Eq (Var pre) (Var post)) :: p.parameter }
+      else pure ()
     bin (x : Nat × Node) (y : Nat × Node) (op : Term → Term → Term): VC PUnit := do
     let x ← genNodeVar' x
     let y ← genNodeVar' y
