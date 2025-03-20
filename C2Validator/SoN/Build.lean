@@ -5,6 +5,7 @@ import C2Validator.SoN.RawParser
 open ValError
 open Lean.Xml
 open Except
+open Z3
 
 namespace SoN
 
@@ -13,7 +14,7 @@ inductive Node where
 | ParmLong
 | ParmFloat
 | ParmIO
-| Return (ctrl : Nat × Node) (io : Nat × Node) (val : Nat × Node)
+| Return (ctrl : Nat × Node) (io : Nat × Node) (val : Option (Nat × Node))
 | AddI (x : Nat × Node) (y : Nat × Node)
 | AddL (x : Nat × Node) (y : Nat × Node)
 | SubI (x : Nat × Node) (y : Nat × Node)
@@ -26,7 +27,7 @@ inductive Node where
 | ConvL2I (x : Nat × Node)
 | MulL (x : Nat × Node) (y : Nat × Node)
 | MulI (x : Nat × Node) (y : Nat × Node)
-| DivI (x : Nat × Node) (y : Nat × Node)
+| DivI (ctrl : Nat × Node) (x : Nat × Node) (y : Nat × Node)
 | ConL (val: Int)
 | ConI (val : Int)
 | ConF (val : FP32)
@@ -35,11 +36,11 @@ inductive Node where
 | CmpResult (prev : Nat × Node) (cmp : Cmp)
 | IfTrue (prev : Nat × Node)
 | IfFalse (prev : Nat × Node)
-deriving Repr, Nonempty
+| CallStaticJava (name : String) (ty : Z3TypeBasic) (ctrl : Nat × Node) (io : Nat × Node) (parms : List (Nat × Node))
+deriving Nonempty
 
 inductive Graph where
 | Graph (name : String) (nodes : Lean.RBMap Nat Node compare)
-deriving Repr
 
 abbrev BuildM := ReaderT (Lean.RBMap Nat NodeRaw compare × Array Edge) (StateT (Lean.RBMap Nat Node compare) Error)
 
@@ -80,7 +81,13 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
   let ctrl ← expectNode idx 0
   let io ← expectNode idx 1
   let input ← tryCatch (some <$> expectNode idx 5) λ _ ↦ pure none
-  pure $ input.map λ input ↦ Node.Return ctrl io input
+  pure $ Node.Return ctrl io input
+| .CallStaticJava name ty => do
+  let ctrl ← expectNode idx 0
+  let io ← expectNode idx 1
+  let params ← ((List.range 30).drop 5).mapM λ slot ↦ tryCatch (some <$> expectNode idx slot) λ _ ↦ pure none
+  let params := params.filterMap (id)
+  pure $ Node.CallStaticJava name ty ctrl io params
 | .AddI => bin Node.AddI
 | .AddL => bin Node.AddL
 | .SubI |.CmpI => bin Node.SubI
@@ -91,7 +98,11 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
 | .LShiftL => bin Node.LShiftL
 | .MulL => bin Node.MulL
 | .MulI => bin Node.MulI
-| .DivI => bin Node.DivI
+| .DivI => do
+  let ctrl ← expectNode idx 0
+  let x ← expectNode idx 1
+  let y ← expectNode idx 2
+  pure $ Node.DivI ctrl x y
 | .ConvI2L => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvI2L
 | .ConvL2I => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvL2I
 | .Bool cmp => do

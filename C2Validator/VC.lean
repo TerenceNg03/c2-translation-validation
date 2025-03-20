@@ -28,7 +28,6 @@ def registerType : Z3Type → VC PUnit
   | t@(.Tuple _) => modify λ p ↦ {p with types := p.types.insert t}
   | _ => pure ()
 
-
 def registerVar (idx : Nat) (ty : Z3Type): VC String := do
   let stage ← read
   let var := s!"{stage}_{idx}"
@@ -43,21 +42,28 @@ def registerVar (idx : Nat) (ty : Z3Type): VC String := do
   | none => pure ()
   let vars := Lean.RBMap.insert vars var ty
   set $ {p with vars := vars}
+  registerType ty
   pure var
 
 def ifResult : Z3Type := .Tuple [.Bool, .Bool]
 
+-- Generate the Node name and return type
 def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
   let (idx, node) := node
   match node with
     | .Return _ _ _ => do
       let name ← registerVar idx ZSideEffect
       pure (name, ZSideEffect)
+    | .CallStaticJava _ ty _ _ _ => do
+      let ty := Z3Type.Tuple [.Bool, .SideEffect, ty]
+      registerType ty
+      let name ← registerVar idx ty
+      pure (name, ty)
     | .ParmInt
     | .AddI _ _
     | .SubI _ _
     | .MulI _ _
-    | .DivI _ _
+    | .DivI _ _ _
     | .LShiftI _ _
     | .ConvL2I _
     | .RShiftI _ _
@@ -116,10 +122,11 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
   | .SubF x y => bin x y SubF
   | .LShiftI x y => bin x y ShlI
   | .MulL x y | .MulI x y => bin x y Mul
-  | .DivI x y => do
+  | .DivI ctrl x y => do
     bin x y Div
     let y ← genNodeVar' y
-    modify λ p ↦ {p with precondition := (Not (Eq (Var y) (Int 0))) :: p.precondition}
+    let ctrl ← genNodeVar' ctrl
+    modify λ p ↦ {p with precondition := (Not (And (Var ctrl) $ Eq (Var y) (Int 0))) :: p.precondition}
   | .RShiftI x y => bin x y ShrI
   | .If prev cond => do
     let prev ← genNodeVar' prev
@@ -172,17 +179,38 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
     let x ← genNodeVar' v
     let this ← genNodeVar' (idx, node)
     registerPostCond $ Assert $ Eq (Var this) (Not (Eq (Var x) (Int 0)))
-  | .Return cond io val => do
-    let (val, ty) ← genNodeVar val
-    let cond ← genNodeVar' cond
+  | .Return ctrl io val => do
+    let ctrl ← genNodeVar' ctrl
     let io ← genNodeVar' io
     let this ← genNodeVar' (idx, node)
-    registerFunction "return!" [ty] ZSideEffect
-    registerPostCond $ Assert $ Eq (Var this) (If (Var cond) (App "join" [Var io, App "return!" [Var val]]) IdentitySideEffect)
+    match val with
+    | some val => do
+      let (val, ty) ← genNodeVar val
+      registerFunction "return!" [ty] ZSideEffect
+      registerPostCond $ Assert $ Eq (Var this) (If (Var ctrl) (App "join" [Var io, App "return!" [Var val]]) IdentitySideEffect)
+    | none => do
+      registerFunction "return!" [] ZSideEffect
+      registerPostCond $ Assert $ Eq (Var this) (If (Var ctrl) (App "join" [Var io, App "return!" []]) IdentitySideEffect)
     let stage ← read
     match stage with
       | .pre => modify λ p ↦ {p with outputPre := Var this :: p.outputPre}
       | .post => modify λ p ↦ {p with outputPost := Var this :: p.outputPost}
+  | .CallStaticJava name _ ctrl io params => do
+    let ctrl ← genNodeVar' ctrl
+    let io ← genNodeVar' io
+    let params ← params.mapM genNodeVar
+    let paramsName := ctrl :: io :: params.map Prod.fst
+    let paramsTy := ZBool :: ZSideEffect :: params.map Prod.snd
+    let (this, retTy) ← genNodeVar (idx, node)
+    registerFunction name paramsTy retTy
+    registerPostCond $ Assert $ Eq (Var this) (App name $ Var <$> paramsName)
+    if name.startsWith "trap--" then
+     let stage ← read
+     match stage with
+      | .pre => modify λ p ↦ {p with outputPre := App "_2" [Var this] :: p.outputPre}
+      | .post => modify λ p ↦ {p with outputPost := App "_2" [Var this] :: p.outputPost}
+    else
+      pure ()
   where
     genParm := do
       let stage ← read

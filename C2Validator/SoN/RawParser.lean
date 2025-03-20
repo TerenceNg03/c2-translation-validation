@@ -2,10 +2,12 @@ import Lean.Data.Xml
 import C2Validator.SoN.XMLParser
 import C2Validator.ValError
 import C2Validator.SoN.Float
+import C2Validator.Z3
 
 open ValError
 open Lean.Xml
 open Except
+open Z3
 
 namespace SoN
 
@@ -46,11 +48,10 @@ inductive NodeRaw where
 | If
 | IfFalse
 | IfTrue
-deriving Repr
+| CallStaticJava (name : String) (ty : Z3TypeBasic)
 
 inductive GraphRaw where
 | Graph (name : String) (edges : Array Edge) (nodes : Lean.RBMap Nat NodeRaw compare)
-deriving Repr
 
 /- Extract property from node -/
 def propertyP (name : String) : Parser String :=
@@ -96,7 +97,20 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
     | "MulI" => pure $ some (idx, NodeRaw.MulI)
     | "CmpI" => pure $ some (idx, NodeRaw.CmpI)
     | "DivI" => pure $ some (idx, NodeRaw.DivI)
-    | "CallStaticJava" => pure none
+    | "CallStaticJava" => do
+      let name ← propertyP "dump_spec"
+      let name := name.takeWhile (λ c ↦ c ≠ ' ')
+      let name := (name.map λ c ↦ if c.isAlphanum then c else '-').append "!"
+      let ty ← propertyP "bottom_type"
+      let ty := ty.dropWhile (λ x ↦ x ≠ '5')
+      let ty := ty.drop 1
+      let ty := ty.takeWhile Char.isAlpha
+      let ty ← match ty with
+      | "int" => pure Z3TypeBasic.Int
+      | "float" => pure Z3TypeBasic.FP32
+      | "" => pure Z3TypeBasic.Unit
+      | _ => throw $ ValError.Parse s!"Unknown CallStaticJava return type {ty} at Node {idx}."
+      pure $ some (idx, NodeRaw.CallStaticJava name ty)
     | "If" => pure $ some (idx, NodeRaw.If)
     | "IfFalse" => pure $ some (idx, NodeRaw.IfFalse)
     | "IfTrue" => pure $ some (idx, NodeRaw.IfTrue)

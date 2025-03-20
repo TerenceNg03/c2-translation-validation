@@ -12,6 +12,7 @@ inductive Z3TypeBasic where
 | FP32
 | Bool
 | SideEffect
+| Unit
 deriving Ord, BEq
 
 instance : ToString Z3TypeBasic where
@@ -20,7 +21,8 @@ instance : ToString Z3TypeBasic where
         | .Long => "(_ BitVec 64)"
         | .FP32 => "Float32"
         | .Bool => "Bool"
-        | .SideEffect => "Int"
+        | .SideEffect => "IO"
+        | .Unit => "Unit"
 
 
 inductive Z3Type where
@@ -85,7 +87,7 @@ inductive Term where
 partial def toStrTerm : Term → String
       | .Var t => t
       | .Int v => s!"#x{v.toInt32.toBitVec.toHex}"
-      | .IdentitySideEffect => "0"
+      | .IdentitySideEffect => "(mkIO 0)"
       | .Long v => s!"#x{v.toInt64.toBitVec.toHex}"
       | .FP32 s => s!"(fp #b{s.take 1} #b{(s.drop 1).take 8} #b{s.drop 9})"
       | .True => "true"
@@ -167,7 +169,13 @@ def collectSideEffects : List Term →  Term
   | [] => .IdentitySideEffect
   | (x::xs) => .App "join" [x, collectSideEffects xs]
 
-def axioms : String := "(assert (forall ((x Int)) (= x (join x 0))))\n(assert (forall ((x Int)) (= x (join 0 x))))"
+def axioms : String := "(assert (forall ((x IO)) (= x (join x (mkIO 0)))))\n(assert (forall ((x IO)) (= x (join (mkIO 0) x))))"
+
+def z3Opts : String := "(set-option :sat.smt true)
+(set-option :smt.ematching false)
+(set-option :sat.phase always_false)
+(set-option :smt.elim_unconstrained false)
+(push)\n\n"
 
 instance : ToString Program where
   toString p :=
@@ -179,7 +187,11 @@ instance : ToString Program where
   let postrequisite := Term.AndAll $ Term.Eq oPre oPost :: p.precondition
   let vc := Stat.Assert $ .Not postrequisite
   let join (xs: List Stat) := String.intercalate "\n" $ xs.map λ x ↦ s!"{x}"
-  s!"; Type Declarations\n{join types}\n\n"
+  z3Opts
+    ++ s!"; Type Declarations\
+          \n(declare-datatypes () ((Unit mkUnit)))\
+          \n(declare-datatypes () ((IO (mkIO (io Int)))))\
+          \n{join types}\n\n"
     ++ s!"; Function Declarations\n{join funcs}\n\n"
     ++ s!"; Side Effect Axioms\n{axioms}\n\n"
     ++ s!"; Variable Declarations\n{join vars}\n\n"
@@ -198,7 +210,7 @@ def validate (path : System.FilePath) (program : Program) : IO (Error PUnit) := 
   IO.println s!"[INFO] Running Z3 prover..."
   let command : IO.Process.SpawnArgs :=
   { cmd := "z3"
-  , args := #[s!"-T:5", s!"{smt}"]
+  , args := #[s!"-T:30", s!"{smt}"]
   }
   let .mk _ output _ ← IO.Process.output command
   if "unsat".isPrefixOf output
