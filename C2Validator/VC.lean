@@ -37,13 +37,12 @@ def registerVar (idx : Nat) (ty : Z3Type): VC String := do
   match ty' with
   | some ty' =>
     if not (ty' == ty) then
-      throw $ ValError.VC s!"Var {var} has conflicting type {ty} and {ty'}."
-    else pure ()
-  | none => pure ()
-  let vars := Lean.RBMap.insert vars var ty
-  set $ {p with vars := vars}
-  registerType ty
-  pure var
+      throw $ ValError.VC s!"Var {var} has conflicting type {typeName ty} and {typeName ty'}."
+    else pure var
+  | none => do
+    set $ {p with vars := vars.insert var ty}
+    registerType ty
+    pure var
 
 def ifResult : Z3Type := .Tuple [.Bool, .Bool]
 
@@ -66,6 +65,8 @@ def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
     | .DivI _ _ _
     | .LShiftI _ _
     | .ConvL2I _
+    | .ConvF2I _
+    | .ConvD2I _
     | .RShiftI _ _
     | .ConI _ => do
       let name ← registerVar idx ZInt
@@ -76,8 +77,12 @@ def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
     | .RShiftL _ _
     | .LShiftL _ _
     | .ConvI2L _
-    | .MulL _ _
+    | .ConvF2L _
+    | .ConvD2L _
     | .AddL _ _
+    | .SubL _ _
+    | .MulL _ _
+    | .DivL _ _ _
     | .ParmLong
     | .ConL _ => do
       let name ← registerVar idx ZLong
@@ -89,10 +94,27 @@ def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
       let name ← registerVar idx ZBool
       pure (name, ZBool)
     | .ParmFloat
+    | .ConvI2F _
+    | .ConvL2F _
+    | .ConvD2F _
     | .ConF _
-    | .SubF _ _ => do
+    | .AddF _ _
+    | .SubF _ _
+    | .MulF _ _
+    | .DivF _ _ => do
       let name ← registerVar idx ZFP32
       pure (name, ZFP32)
+    | .ParmDouble
+    | .ConvI2D _
+    | .ConvL2D _
+    | .ConvF2D _
+    | .ConD _
+    | .AddD _ _
+    | .SubD _ _
+    | .MulD _ _
+    | .DivD _ _ => do
+      let name ← registerVar idx ZFP64
+      pure (name, ZFP64)
     | .If _ _  => do
       let name ← registerVar idx ifResult
       pure (name, ifResult)
@@ -102,8 +124,14 @@ def genNodeVar' (node : Nat × Node) : VC String := Prod.fst <$> genNodeVar node
 def registerPostCond (x : Stat) : VC PUnit :=
   modify λ p ↦ {p with postcondition := x :: p.postcondition}
 
-def registerFunction (name : String) (params : List Z3Type) (ret : Z3Type) : VC PUnit :=
-  modify λ p ↦ {p with funcs := p.funcs.insert name (params, ret)}
+def registerFunction (name : String) (params : List Z3Type) (ret : Z3Type) : VC PUnit := do
+  let p  ← get
+  match p.funcs.find? name with
+  | some ty' =>
+    if not (ty' == (params, ret)) then
+      throw $ ValError.VC s!"Function {name} has conflicting type {ty'.map (List.map typeName) typeName} and {(params, ret).map (List.map typeName) typeName}."
+    else pure ()
+  | none => set {p with funcs := p.funcs.insert name (params, ret)}
 
 def withPre : VC α → VC α := ReaderT.adapt λ _ => Stage.pre
 def withPost : VC α → VC α := ReaderT.adapt λ _ => Stage.post
@@ -112,21 +140,36 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
   match node with
   | .ParmInt
   | .ParmLong
-  | .ParmFloat => genParm
+  | .ParmFloat
+  | .ParmDouble => genParm
   | .ParmIO => do
     let this ← genNodeVar' (idx, node)
     registerPostCond $ Assert $ Eq (Var this) IdentitySideEffect
   | .AddI x y => bin x y Add
-  | .AddL x y => bin x y Add
   | .SubI x y => bin x y Sub
-  | .SubF x y => bin x y SubF
-  | .LShiftI x y => bin x y ShlI
-  | .MulL x y | .MulI x y => bin x y Mul
+  | .MulI x y => bin x y Mul
   | .DivI ctrl x y => do
     bin x y Div
     let y ← genNodeVar' y
     let ctrl ← genNodeVar' ctrl
     modify λ p ↦ {p with precondition := (Not (And (Var ctrl) $ Eq (Var y) (Int 0))) :: p.precondition}
+  | .AddL x y => bin x y Add
+  | .SubL x y => bin x y Sub
+  | .MulL x y => bin x y Mul
+  | .DivL ctrl x y => do
+    bin x y Div
+    let y ← genNodeVar' y
+    let ctrl ← genNodeVar' ctrl
+    modify λ p ↦ {p with precondition := (Not (And (Var ctrl) $ Eq (Var y) (Long 0))) :: p.precondition}
+  | .AddF x y => bin x y AddFP
+  | .SubF x y => bin x y SubFP
+  | .MulF x y => bin x y MulFP
+  | .DivF x y => bin x y DivFP
+  | .AddD x y => bin x y AddFP
+  | .SubD x y => bin x y SubFP
+  | .MulD x y => bin x y MulFP
+  | .DivD x y => bin x y DivFP
+  | .LShiftI x y => bin x y ShlI
   | .RShiftI x y => bin x y ShrI
   | .If prev cond => do
     let prev ← genNodeVar' prev
@@ -158,14 +201,18 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
     let this ← genNodeVar' (idx, node)
     registerPostCond $ Assert $ Eq
       (Var this) (ShlL (Var x) (I2L (Var y)))
-  | .ConvL2I i => do
-    let x ← genNodeVar' i
-    let this ← genNodeVar' (idx, node)
-    registerPostCond $ Assert $ Eq (Var this) (L2I (Var x))
-  | .ConvI2L i => do
-    let x ← genNodeVar' i
-    let this ← genNodeVar' (idx, node)
-    registerPostCond $ Assert $ Eq (Var this) (I2L (Var x))
+  | .ConvD2F v => genConv v D2F
+  | .ConvD2I v => genConv v D2I
+  | .ConvD2L v => genConv v D2L
+  | .ConvF2D v => genConv v F2D
+  | .ConvF2I v => genConv v F2I
+  | .ConvF2L v => genConv v F2L
+  | .ConvI2D v => genConv v I2D
+  | .ConvI2F v => genConv v I2F
+  | .ConvI2L v => genConv v I2L
+  | .ConvL2D v => genConv v L2D
+  | .ConvL2F v => genConv v L2F
+  | .ConvL2I v => genConv v L2I
   | .ConI v => do
     let this ← genNodeVar' (idx, node)
     registerPostCond $ Assert $ Eq (Var this) (Int v)
@@ -175,10 +222,17 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
   | .ConF f => do
     let this ← genNodeVar' (idx, node)
     registerPostCond $ Assert $ Eq (Var this) (FP32 f)
-  | .CmpResult v .Ne => do
-    let x ← genNodeVar' v
+  | .ConD f => do
     let this ← genNodeVar' (idx, node)
-    registerPostCond $ Assert $ Eq (Var this) (Not (Eq (Var x) (Int 0)))
+    registerPostCond $ Assert $ Eq (Var this) (FP64 f)
+  | .CmpResult v .Ne => do
+    let (x, ty) ← genNodeVar v
+    let this ← genNodeVar' (idx, node)
+    let zero ← match ty with
+      | .Basic .Int => pure (Int 0)
+      | .Basic .Long => pure (Long 0)
+      | _ => throw $ ValError.Unsupported s!"Node {idx} Compare result for type {typeName ty}"
+    registerPostCond $ Assert $ Eq (Var this) (Not (Eq (Var x) zero))
   | .Return ctrl io val => do
     let ctrl ← genNodeVar' ctrl
     let io ← genNodeVar' io
@@ -202,9 +256,12 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
     let paramsName := ctrl :: io :: params.map Prod.fst
     let paramsTy := ZBool :: ZSideEffect :: params.map Prod.snd
     let (this, retTy) ← genNodeVar (idx, node)
+    -- Fix function with same name but different time
+    let nameFix := String.intercalate "-" $ (paramsTy.drop 2).map typeName
+    let name := name ++ nameFix ++ "!"
     registerFunction name paramsTy retTy
     registerPostCond $ Assert $ Eq (Var this) (App name $ Var <$> paramsName)
-    if name.startsWith "trap--" then
+    if name.startsWith "trap-" then
      let stage ← read
      match stage with
       | .pre => modify λ p ↦ {p with outputPre := App "_2" [Var this] :: p.outputPre}
@@ -219,12 +276,16 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
         let post ← withPost $ genNodeVar' (idx, node)
         modify λ p ↦ {p with parameter := Assert (Eq (Var pre) (Var post)) :: p.parameter }
       else pure ()
+    genConv i op := do
+      let x ← genNodeVar' i
+      let this ← genNodeVar' (idx, node)
+      registerPostCond $ Assert $ Eq (Var this) (op (Var x))
     bin (x : Nat × Node) (y : Nat × Node) (op : Term → Term → Term): VC PUnit := do
-    let x ← genNodeVar' x
-    let y ← genNodeVar' y
-    let this ← genNodeVar' (idx, node)
-    registerPostCond $ Assert $ Eq
-      (Var this) (op (Var x) (Var y))
+      let x ← genNodeVar' x
+      let y ← genNodeVar' y
+      let this ← genNodeVar' (idx, node)
+      registerPostCond $ Assert $ Eq
+        (Var this) (op (Var x) (Var y))
 
 def genNodes : Graph → VC PUnit
 | .Graph _ nodes => Lean.RBMap.forM genNode nodes

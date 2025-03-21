@@ -28,7 +28,7 @@ partial def loopDetectM (node : Nat) : ReaderT Edges (StateT State Error) PUnit 
     modify λ state ↦ state.insert node NodeState.Done
 
 def loopDetect : GraphRaw → Error PUnit
-| .Graph _ edges nodes =>
+| .mk _ edges nodes =>
   let edges : Edges := edges.foldl (
       λ map (.Edge src des _) ↦
         match map.find? src with

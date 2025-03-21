@@ -13,24 +13,45 @@ inductive Node where
 | ParmInt
 | ParmLong
 | ParmFloat
+| ParmDouble
 | ParmIO
 | Return (ctrl : Nat × Node) (io : Nat × Node) (val : Option (Nat × Node))
 | AddI (x : Nat × Node) (y : Nat × Node)
 | AddL (x : Nat × Node) (y : Nat × Node)
+| AddF (x : Nat × Node) (y : Nat × Node)
+| AddD (x : Nat × Node) (y : Nat × Node)
 | SubI (x : Nat × Node) (y : Nat × Node)
+| SubL (x : Nat × Node) (y : Nat × Node)
 | SubF (x : Nat × Node) (y : Nat × Node)
+| SubD (x : Nat × Node) (y : Nat × Node)
+| MulI (x : Nat × Node) (y : Nat × Node)
+| MulL (x : Nat × Node) (y : Nat × Node)
+| MulF (x : Nat × Node) (y : Nat × Node)
+| MulD (x : Nat × Node) (y : Nat × Node)
+| DivI (ctrl : Nat × Node) (x : Nat × Node) (y : Nat × Node)
+| DivL (ctrl : Nat × Node) (x : Nat × Node) (y : Nat × Node)
+| DivF (x : Nat × Node) (y : Nat × Node)
+| DivD (x : Nat × Node) (y : Nat × Node)
 | LShiftI (x : Nat × Node) (y : Nat × Node)
 | RShiftI (x : Nat × Node) (y : Nat × Node)
 | RShiftL (x : Nat × Node) (y : Nat × Node)
 | LShiftL (x : Nat × Node) (y : Nat × Node)
+| ConvD2F (x : Nat × Node)
+| ConvD2I (x : Nat × Node)
+| ConvD2L (x : Nat × Node)
+| ConvF2D (x : Nat × Node)
+| ConvF2I (x : Nat × Node)
+| ConvF2L (x : Nat × Node)
+| ConvI2D (x : Nat × Node)
+| ConvI2F (x : Nat × Node)
 | ConvI2L (x : Nat × Node)
+| ConvL2D (x : Nat × Node)
+| ConvL2F (x : Nat × Node)
 | ConvL2I (x : Nat × Node)
-| MulL (x : Nat × Node) (y : Nat × Node)
-| MulI (x : Nat × Node) (y : Nat × Node)
-| DivI (ctrl : Nat × Node) (x : Nat × Node) (y : Nat × Node)
 | ConL (val: Int)
 | ConI (val : Int)
 | ConF (val : FP32)
+| ConD (val : FP32)
 | ConB (val : Bool)
 | If (prev : Nat × Node) (cond : Nat × Node)
 | CmpResult (prev : Nat × Node) (cmp : Cmp)
@@ -76,6 +97,7 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
 | .ParmInt => pure $ Node.ParmInt
 | .ParmLong => pure $ Node.ParmLong
 | .ParmFloat => pure $ Node.ParmFloat
+| .ParmDouble => pure $ Node.ParmDouble
 | .ParmIO => pure $ Node.ParmIO
 | .Return => do
   let ctrl ← expectNode idx 0
@@ -90,20 +112,45 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
   pure $ Node.CallStaticJava name ty ctrl io params
 | .AddI => bin Node.AddI
 | .AddL => bin Node.AddL
-| .SubI |.CmpI => bin Node.SubI
+| .AddF => bin Node.AddF
+| .AddD => bin Node.AddD
+| .SubI => bin Node.SubI
+| .SubL => bin Node.SubL
 | .SubF => bin Node.SubF
+| .SubD => bin Node.SubD
+| .MulI => bin Node.MulI
+| .MulL => bin Node.MulL
+| .MulF => bin Node.MulF
+| .MulD => bin Node.MulD
+| .DivF => bin Node.AddF
+| .DivD => bin Node.AddD
+| .CmpI => bin Node.SubI
+| .CmpL => bin Node.SubL
 | .LShiftI => bin Node.LShiftI
 | .RShiftI => bin Node.RShiftI
 | .RShiftL => bin Node.RShiftL
 | .LShiftL => bin Node.LShiftL
-| .MulL => bin Node.MulL
-| .MulI => bin Node.MulI
 | .DivI => do
   let ctrl ← expectNode idx 0
   let x ← expectNode idx 1
   let y ← expectNode idx 2
   pure $ Node.DivI ctrl x y
+| .DivL => do
+  let ctrl ← expectNode idx 0
+  let x ← expectNode idx 1
+  let y ← expectNode idx 2
+  pure $ Node.DivL ctrl x y
+| .ConvD2F => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvD2F
+| .ConvD2I => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvD2I
+| .ConvD2L => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvD2L
+| .ConvF2D => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvF2D
+| .ConvF2I => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvF2I
+| .ConvF2L => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvF2L
+| .ConvI2D => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvI2D
+| .ConvI2F => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvI2F
 | .ConvI2L => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvI2L
+| .ConvL2D => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvL2D
+| .ConvL2F => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvL2F
 | .ConvL2I => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvL2I
 | .Bool cmp => do
     let x ← expectNode idx 1
@@ -115,6 +162,7 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
 | .ConI v => pure $ Node.ConI v
 | .ConL v => pure $ Node.ConL v
 | .ConF v => pure $ Node.ConF v
+| .ConD v => pure $ Node.ConD v
 | .ProjCtrl | .ParmCtrl => pure $ Node.ConB true
 | .IfTrue => expectNode idx 0 >>= pure ∘ some ∘ Node.IfTrue
 | .IfFalse => expectNode idx 0 >>= pure ∘ some ∘ Node.IfFalse
@@ -132,6 +180,6 @@ def buildAllNodes : BuildM PUnit := do
   pure ()
 
 def buildGraph : GraphRaw → Error Graph
-| .Graph name edges nodes => do
+| .mk name edges nodes => do
   let nodes ← StateT.run (ReaderT.run buildAllNodes (nodes, edges)) Lean.RBMap.empty
   pure $ Graph.Graph name $ nodes.snd
