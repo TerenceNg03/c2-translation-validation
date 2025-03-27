@@ -14,8 +14,8 @@ inductive Expr
 | Or (e1 : Expr) (e2 : Expr)
 | ConI (val : Int)
 | ConL (val : Int)
-| ConF (val : Float)
-| ConD (val : Float)
+| ConF (val : String)
+| ConD (val : String)
 | LShift (e1 : Expr) (e2 : Expr)
 | RShift (e1 : Expr) (e2 : Expr)
 | VarI (idx : Nat)
@@ -57,6 +57,32 @@ def fuzzIntLeaf : FuzzM Expr := do
       set {stat with vars := stat.vars + 1}
       pure $ op stat.vars
 
+def fuzzFloatLeaf : FuzzM Expr := do
+  let rand ← IO.rand 0 20
+  let op ← randBool
+  if rand <= 10 then
+    let op := pure ∘ if op then ConF else ConD
+    match rand with
+    | 0 => op "0.0"
+    | 1 => op "(0.0/0)"
+    | 2 => op "(1.0/0)"
+    | 3 => op "(-1.0/0)"
+    | 4 => op "(-0.0)"
+    | 5 => op "(-0.0/0)"
+    | _ => do
+      let val ← IO.rand 0 (2^31 - 1)
+      let val2 ← IO.rand 0 (2^31 - 1)
+      op s!"{val}.{val2}"
+  else
+    let stat ← get
+    let rand ← IO.rand 0 stat.vars
+    let op := if op then VarI else VarL
+    if rand < stat.vars then
+      pure $ op rand
+    else
+      set {stat with vars := stat.vars + 1}
+      pure $ op stat.vars
+
 partial def fuzzInt : FuzzM Expr := do
   let stat ← get
   let maxDepth ← read
@@ -74,9 +100,31 @@ partial def fuzzInt : FuzzM Expr := do
     | 6 => And
     | 7 => Or
     | _ => RShift
-    let rand ← IO.rand 0 3
     let e1 ← fuzzInt
-    let e2 ← if rand == 0 then pure e1 else fuzzInt
+    let e2 ← fuzzInt
+    let expr := op e1 e2
+    pure $ match expr with
+    | LShift x (ConI v) => LShift x (ConI (v % 16))
+    | LShift x (ConL v) => LShift x (ConI (v % 64))
+    | RShift x (ConI v) => RShift x (ConI (v % 16))
+    | RShift x (ConL v) => RShift x (ConI (v % 64))
+    | _ => expr
+
+partial def fuzzFloat : FuzzM Expr := do
+  let stat ← get
+  let maxDepth ← read
+  if maxDepth == stat.depth then
+    fuzzFloatLeaf
+  else
+    let rand ← IO.rand 0 3
+    modify λ s ↦ {s with depth := s.depth + 1}
+    let op := match rand with
+    | 0 => Plus
+    | 1 => Sub
+    | 2 => Mul
+    | _ => Div
+    let e1 ← fuzzFloat
+    let e2 ← fuzzFloat
     let expr := op e1 e2
     pure $ match expr with
     | LShift x (ConI v) => LShift x (ConI (v % 16))
@@ -113,7 +161,7 @@ where f ty n := do
       set $ nSet.insert n
       pure [s!"{ty} x{n}"]
 
-partial def printExpr : Expr → StateM (Nat × String) String
+partial def printExpr : Expr → StateT (Nat × String) IO String
 | .Plus e1 e2 => bin "+" e1 e2
 | .Sub e1 e2 => bin "-" e1 e2
 | .Mul e1 e2 => bin "*" e1 e2
@@ -124,8 +172,8 @@ partial def printExpr : Expr → StateM (Nat × String) String
 | .RShift e1 e2 => bin ">>" e1 e2
 | .ConI v => pure $ s!"{v % (2^31 - 1)}"
 | .ConL v => pure $ s!"{v}L"
-| .ConF v => pure $ s!"{v}F"
-| .ConD v => pure $ s!"{v}D"
+| .ConF v => pure $ s!"{v}"
+| .ConD v => pure $ s!"{v}"
 | .VarI n
 | .VarL n
 | .VarF n
@@ -133,15 +181,21 @@ partial def printExpr : Expr → StateM (Nat × String) String
 where
   bin op e1 e2 := do
     let s1 ← printExpr e1
-    let s2 ← printExpr e2
-    let (idx, s) ← get
-    set $ (idx + 1, s ++ s!"        var v{idx} = {s1} {op} {s2};\n")
-    pure s!"v{idx}"
+    let rand ← IO.rand 0 2
+    if rand == 0 then
+      let (idx, s) ← get
+      set $ (idx + 1, s ++ s!"        var v{idx} = {s1} {op} {s1};\n")
+      pure s!"v{idx}"
+    else
+      let s2 ← printExpr e2
+      let (idx, s) ← get
+      set $ (idx + 1, s ++ s!"        var v{idx} = {s1} {op} {s2};\n")
+      pure s!"v{idx}"
 
-def printProgram (idx : Nat) (expr : Expr): String :=
+def printProgram (idx : Nat) (expr : Expr): IO String := do
 let paramList := (printParams expr).run' Lean.RBTree.empty
-let (ret, (_, body)) := (printExpr expr).run (0, "")
-s!"\
+let (ret, (_, body)) ← (printExpr expr).run (0, "")
+pure $ s!"\
 public class Test{idx}" ++ " {" ++ s!"
     public static void main(String[] args)" ++ " {" ++s!"
       try" ++ " {" ++s!"
@@ -150,10 +204,10 @@ public class Test{idx}" ++ " {" ++ s!"
       }
     }
 
-    static long test{idx} ({String.intercalate ", " paramList}) "++" {"++s!"
+    static double test{idx} ({String.intercalate ", " paramList}) "++" {"++s!"
 {body}        return {ret};
     }
 }\n"
 
-def runFuzzer (fuzzer : FuzzM Expr) (depth : Nat) : IO Expr :=
+def runFuzzer (fuzzer : FuzzM Expr) (depth : Nat) : IO Expr := do
   (fuzzer.run depth).run' {depth := 0, vars := 0 : FuzzState}
