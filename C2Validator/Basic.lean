@@ -69,7 +69,7 @@ def compileAndVerify (level : Nat) (method : Option String) (path : System.FileP
     | .error e => pure $ throw e
   showResult result
 
-def fuzzAndVerify (limit : Nat) (depth : Nat) (path : System.FilePath) : IO PUnit := do
+def fuzzAndVerify (limit : Nat) (timeout : Nat) (depth : Nat) (path : System.FilePath) : IO PUnit := do
   let date ← IO.Process.run {cmd := "date"}
   let path := path.join $ (date.replace " " "-").dropRight 1
   let shouldremove ← path.isDir
@@ -86,7 +86,7 @@ def fuzzAndVerify (limit : Nat) (depth : Nat) (path : System.FilePath) : IO PUni
     let javaFile ← fuzzer.fuzzIntProgram idx depth path
     let xml ← compileIR 1 none javaFile
     let result ← match xml with
-      | .ok xml => verifyXML' xml 30
+      | .ok xml => verifyXML' xml timeout
       | .error e => pure $ throw e
     let msg := match result with
     | .ok _ => s!"Verified,"

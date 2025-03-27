@@ -20,7 +20,8 @@ def runFuzz (p: Parsed) : IO UInt32 := do
   let path : String := p.positionalArg! "output" |>.as! String
   let depth := λ x ↦ x |>.as! Nat <$> p.flag? "depth" |>.getD 10
   let number := λ x ↦ x |>.as! Nat <$> p.flag? "number" |>.getD 20
-  fuzzAndVerify number depth path
+  let timeout := λ x ↦ x |>.as! Nat <$> p.flag? "timeout" |>.getD 30
+  fuzzAndVerify number timeout depth path
   pure 0
 
 def fuzz : Cmd := `[Cli|
@@ -30,6 +31,7 @@ def fuzz : Cmd := `[Cli|
   FLAGS:
     depth : Nat;       "Depth of generated tree."
     number : String;    "Number of examples to be generated."
+    timeout : Nat;      "Timeout"
 
   ARGS:
     output : String;    "Directory to write output files."
