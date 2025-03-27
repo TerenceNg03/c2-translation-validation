@@ -10,6 +10,8 @@ inductive Expr
 | Sub (e1 : Expr) (e2 : Expr)
 | Mul (e1 : Expr) (e2 : Expr)
 | Div (e1 : Expr) (e2 : Expr)
+| And (e1 : Expr) (e2 : Expr)
+| Or (e1 : Expr) (e2 : Expr)
 | ConI (val : Int)
 | ConL (val : Int)
 | ConF (val : Float)
@@ -61,7 +63,7 @@ partial def fuzzInt : FuzzM Expr := do
   if maxDepth == stat.depth then
     fuzzIntLeaf
   else
-    let rand ← IO.rand 0 6
+    let rand ← IO.rand 0 8
     modify λ s ↦ {s with depth := s.depth + 1}
     let op := match rand with
     | 0 => Plus
@@ -69,6 +71,8 @@ partial def fuzzInt : FuzzM Expr := do
     | 2 => Mul
     | 3 => Div
     | 5 => LShift
+    | 6 => And
+    | 7 => Or
     | _ => RShift
     let rand ← IO.rand 0 3
     let e1 ← fuzzInt
@@ -86,6 +90,8 @@ def printParams : Expr -> StateM (Lean.RBTree Nat compare) (List String)
 | .Sub e1 e2
 | .Mul e1 e2
 | .Div e1 e2
+| .And e1 e2
+| .Or e1 e2
 | .LShift e1 e2
 | .RShift e1 e2 => do
   let p1 ← printParams e1
@@ -112,6 +118,8 @@ partial def printExpr : Expr → StateM (Nat × String) String
 | .Sub e1 e2 => bin "-" e1 e2
 | .Mul e1 e2 => bin "*" e1 e2
 | .Div e1 e2 => bin "/" e1 e2
+| .And e1 e2 => bin "&" e1 e2
+| .Or e1 e2 => bin "|" e1 e2
 | .LShift e1 e2 => bin "<<" e1 e2
 | .RShift e1 e2 => bin ">>" e1 e2
 | .ConI v => pure $ s!"{v % (2^31 - 1)}"
@@ -149,9 +157,3 @@ public class Test{idx}" ++ " {" ++ s!"
 
 def runFuzzer (fuzzer : FuzzM Expr) (depth : Nat) : IO Expr :=
   (fuzzer.run depth).run' {depth := 0, vars := 0 : FuzzState}
-
--- def test (x: Nat):= do
---   let expr ← runFuzzer fuzzInt 2
---   IO.print $ printProgram x expr
-
--- #eval test 7

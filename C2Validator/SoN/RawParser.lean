@@ -44,6 +44,10 @@ inductive NodeRaw where
 | DivL
 | DivF
 | DivD
+| AndI
+| AndL
+| OrI
+| OrL
 | LShiftI
 | LShiftL
 | RShiftI
@@ -132,6 +136,11 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
     | "LShiftL" => pure $ some (idx, NodeRaw.LShiftL)
     | "RShiftI" => pure $ some (idx, NodeRaw.RShiftI)
     | "RShiftL" => pure $ some (idx, NodeRaw.RShiftL)
+
+    | "AndI" => pure $ some (idx, NodeRaw.AndI)
+    | "AndL" => pure $ some (idx, NodeRaw.AndL)
+    | "OrI" => pure $ some (idx, NodeRaw.OrI)
+    | "OrL" => pure $ some (idx, NodeRaw.OrL)
 
     | "ConvD2F" => pure $ some (idx, NodeRaw.ConvD2F)
     | "ConvD2I" => pure $ some (idx, NodeRaw.ConvD2I)

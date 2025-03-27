@@ -33,6 +33,10 @@ inductive Node where
 | DivL (ctrl : Nat × Node) (x : Nat × Node) (y : Nat × Node)
 | DivF (x : Nat × Node) (y : Nat × Node)
 | DivD (x : Nat × Node) (y : Nat × Node)
+| AndI (x : Nat × Node) (y : Nat × Node)
+| AndL (x : Nat × Node) (y : Nat × Node)
+| OrI (x : Nat × Node) (y : Nat × Node)
+| OrL (x : Nat × Node) (y : Nat × Node)
 | LShiftI (x : Nat × Node) (y : Nat × Node)
 | RShiftI (x : Nat × Node) (y : Nat × Node)
 | RShiftL (x : Nat × Node) (y : Nat × Node)
@@ -149,6 +153,10 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
   let x ← expectNode idx 1
   let y ← expectNode idx 2
   pure $ Node.DivL ctrl x y
+| .AndI => bin Node.AndI
+| .AndL => bin Node.AndL
+| .OrI => bin Node.OrI
+| .OrL => bin Node.OrL
 | .ConvD2F => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvD2F
 | .ConvD2I => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvD2I
 | .ConvD2L => expectNode idx 1 >>= pure ∘ some ∘ Node.ConvD2L

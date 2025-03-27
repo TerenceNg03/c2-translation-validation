@@ -86,7 +86,7 @@ inductive Term where
 | Eq (t1 : Term) (t2: Term)
 | If (cond : Term) (t1 : Term) (t2: Term)
 | Not (b : Term)
-| And (t1 : Term) (t2 : Term)
+| AndLogic (t1 : Term) (t2 : Term)
 | AndAll (ts: List Term)
 | Add (t1 : Term) (t2 : Term)
 | Sub (t1 : Term) (t2 : Term)
@@ -97,6 +97,8 @@ inductive Term where
 | SubFP (t1 : Term) (t2 : Term)
 | MulFP (t1 : Term) (t2 : Term)
 | DivFP (t1 : Term) (t2 : Term)
+| And (t1 : Term) (t2 : Term)
+| Or (t1 : Term) (t2 : Term)
 | ShlI (t1 : Term) (t2 : Term)
 | ShlL (t1 : Term) (t2 : Term)
 | ShrI (t1 : Term) (t2 : Term)
@@ -131,13 +133,15 @@ partial def toStrTerm : Term → String
       | .Eq t1 t2 => s!"(= {toStrTerm t1} {toStrTerm t2})"
       | .If cond t1 t2 => s!"(if {toStrTerm cond} {toStrTerm t1} {toStrTerm t2})"
       | .Not b => s!"(not {toStrTerm b})"
-      | .And t1 t2 => s!"(and {toStrTerm t1} {toStrTerm t2})"
+      | .AndLogic t1 t2 => s!"(and {toStrTerm t1} {toStrTerm t2})"
       | .AndAll ts =>
           let ts := String.intercalate " " $ ts.map λ x ↦ s!"\n{toStrTerm x}"
           s!"(and {ts})"
       | .Add t1 t2 => s!"(bvadd {toStrTerm t1} {toStrTerm t2})"
       | .Sub t1 t2 => s!"(bvsub {toStrTerm t1} {toStrTerm t2})"
       | .Mul t1 t2 => s!"(bvmul {toStrTerm t1} {toStrTerm t2})"
+      | .And t1 t2 => s!"(bvand {toStrTerm t1} {toStrTerm t2})"
+      | .Or t1 t2 => s!"(bvor {toStrTerm t1} {toStrTerm t2})"
       | .MulHiL t1 t2 => s!"((_ extract 127 64) (bvmul ((_ sign_extend 64) {toStrTerm t1}) ((_ sign_extend 64) {toStrTerm t2})))"
       | .Div t1 t2 => s!"(bvsdiv {toStrTerm t1} {toStrTerm t2})"
       | .AddFP t1 t2 => s!"(fp.add roundNearestTiesToEven {toStrTerm t1} {toStrTerm t2})"

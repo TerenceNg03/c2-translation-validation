@@ -63,6 +63,8 @@ def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
     | .SubI _ _
     | .MulI _ _
     | .DivI _ _ _
+    | .AndI _ _
+    | .OrI _ _
     | .LShiftI _ _
     | .ConvL2I _
     | .ConvF2I _
@@ -84,6 +86,8 @@ def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
     | .MulL _ _
     | .MulHiL _ _
     | .DivL _ _ _
+    | .AndL _ _
+    | .OrL _ _
     | .ParmLong
     | .ConL _ => do
       let name ← registerVar idx ZLong
@@ -153,7 +157,7 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
     bin x y Div
     let y ← genNodeVar' y
     let ctrl ← genNodeVar' ctrl
-    modify λ p ↦ {p with precondition := (Not (And (Var ctrl) $ Eq (Var y) (Int 0))) :: p.precondition}
+    modify λ p ↦ {p with precondition := (Not (AndLogic (Var ctrl) $ Eq (Var y) (Int 0))) :: p.precondition}
   | .AddL x y => bin x y Add
   | .SubL x y => bin x y Sub
   | .MulL x y => bin x y Mul
@@ -162,7 +166,7 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
     bin x y Div
     let y ← genNodeVar' y
     let ctrl ← genNodeVar' ctrl
-    modify λ p ↦ {p with precondition := (Not (And (Var ctrl) $ Eq (Var y) (Long 0))) :: p.precondition}
+    modify λ p ↦ {p with precondition := (Not (AndLogic (Var ctrl) $ Eq (Var y) (Long 0))) :: p.precondition}
   | .AddF x y => bin x y AddFP
   | .SubF x y => bin x y SubFP
   | .MulF x y => bin x y MulFP
@@ -181,14 +185,16 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
   | .IfTrue i => do
     let x ← genNodeVar' i
     let this ← genNodeVar' (idx, node)
-    registerPostCond $ Assert $ Eq (Var this) (And (Index (Var x) 1) (Index (Var x) 2))
+    registerPostCond $ Assert $ Eq (Var this) (AndLogic (Index (Var x) 1) (Index (Var x) 2))
   | .IfFalse i => do
     let x ← genNodeVar' i
     let this ← genNodeVar' (idx, node)
-    registerPostCond $ Assert $ Eq (Var this) (And (Index (Var x) 1) (Not (Index (Var x) 2)))
+    registerPostCond $ Assert $ Eq (Var this) (AndLogic (Index (Var x) 1) (Not (Index (Var x) 2)))
   | .ConB b => do
     let this ← genNodeVar' (idx, node)
     registerPostCond $ Assert $ Eq (Var this) (if b then True else False)
+  | .AndI x y | .AndL x y => bin x y And
+  | .OrI x y | .OrL x y => bin x y Or
   /- RShiftL take Long << Int in java and requires conversion. -/
   | .RShiftL x y => do
     let x ← genNodeVar' x
