@@ -16,6 +16,25 @@ def xml : Cmd := `[Cli|
     file : String;      "File to verify."
 ]
 
+def runFuzz (p: Parsed) : IO UInt32 := do
+  let path : String := p.positionalArg! "output" |>.as! String
+  let depth := λ x ↦ x |>.as! Nat <$> p.flag? "depth" |>.getD 10
+  let number := λ x ↦ x |>.as! Nat <$> p.flag? "number" |>.getD 20
+  fuzzAndVerify number depth path
+  pure 0
+
+def fuzz : Cmd := `[Cli|
+  fuzz VIA runFuzz;
+  "Run verifier with fuzzer."
+
+  FLAGS:
+    depth : Nat;       "Depth of generated tree."
+    number : String;    "Number of examples to be generated."
+
+  ARGS:
+    output : String;    "Directory to write output files."
+]
+
 def validate (p : Parsed) : IO UInt32 := do
   let file : String := p.positionalArg! "file" |>.as! String
   let level := λ x ↦ x |>.as! Nat <$> p.flag? "level" |>.getD 1
@@ -36,7 +55,8 @@ def c2validator : Cmd := `[Cli|
     file : String;      "File to verify."
 
   SUBCOMMANDS:
-    xml
+    xml;
+    fuzz
 ]
 
 def main (args : List String) : IO UInt32 := do

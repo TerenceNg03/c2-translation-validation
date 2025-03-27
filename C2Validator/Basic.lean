@@ -2,6 +2,7 @@ import C2Validator.ValError
 import C2Validator.VC
 import C2Validator.SoN
 import C2Validator.Z3
+import C2Validator.Fuzzer.Basic
 
 open ValError
 
@@ -20,7 +21,7 @@ def compileIR (level : Nat) (method : Option String) (path : System.FilePath) : 
                 ]
       , stdout := .null
       }
-  IO.println s!"[INFO] Compiling {path.fileName.get!}..."
+  IO.println s!"[INFO] Compiling {path.fileName.get!} ..."
   let child ← IO.Process.spawn command
   let code ← IO.Process.Child.wait child
   if code ≠ 0 then
@@ -28,21 +29,21 @@ def compileIR (level : Nat) (method : Option String) (path : System.FilePath) : 
     else
     pure $ pure xml
 
-def showResult (path : System.FilePath) (result : Error PUnit) : IO UInt32 :=
+def showResult (result : Error PUnit) : IO UInt32 :=
   match result with
   | .ok _ => do
-    IO.println s!"[🟢][Verified] {path}"
+    IO.println s!"[INFO] [\x1b[1;32mVerified\x1b[0m]"
     pure 0
   | .error e => do
     IO.println $ match e with
-    | .Unsupported s => s!"[🟡][Unsupported] {s}"
-    | .Compile s => s!"[🔴][Compiler Error] Can not compile file: {s}"
-    | .Undecidable => s!"[🟡][Undecidable Problem] loop"
-    | .CounterExample ce => s!"[🔴][Counter Example] Counter example available at {ce}"
-    | .Z3 s => s!"[🔴][Z3 Error] {s}"
-    | .VC s => s!"[🔴][Verfi Cond Gen Error] {s}"
-    | .Parse s => s!"[🔴][Parsing Error] {s}"
-    | .Timeout => s!"[🔴][Timeout]"
+    | .Unsupported s => s!"[WARN] [\x1b[1;33mUnsupported\x1b[0m] {s}"
+    | .Compile s => s!"[ERROR] [\x1b[1;31mCompiler Error\x1b[0m] Can not compile file: {s}\x1b[0m"
+    | .Undecidable => s!"[WARN] [\x1b[1;33mUndecidable Problem\x1b[0m] loop"
+    | .CounterExample ce => s!"[INFO] [\x1b[1;31mCounter Example\x1b[0m] Counter example available at {ce}"
+    | .Z3 s => s!"[ERROR] [\x1b[1;31mZ3 Error\x1b[0m] {s}"
+    | .VC s => s!"[ERROR] [\x1b[1;31mVerfi Cond Gen Erro\x1b[0m] {s}"
+    | .Parse s => s!"[ERROR] [\x1b[1;31mParsing Error\x1b[0m] {s}"
+    | .Timeout => s!"[WARN] [\x1b[1;31mTimeout\x1b[0m]"
     match e with
     | .Timeout | .Undecidable => pure 2
     | _ => pure 1
@@ -59,11 +60,46 @@ def verifyXML' (path : System.FilePath) (timeout : Int): IO (Error PUnit) := do
 
 def verifyXML (path : System.FilePath) (timeout : Int): IO UInt32 := do
   let result ← verifyXML' path timeout
-  showResult path result
+  showResult result
 
 def compileAndVerify (level : Nat) (method : Option String) (path : System.FilePath) (timeout : Int): IO UInt32 := do
   let xml ← compileIR level method path
   let result ← match xml with
     | .ok xml => verifyXML' xml timeout
     | .error e => pure $ throw e
-  showResult path result
+  showResult result
+
+def fuzzAndVerify (limit : Nat) (depth : Nat) (path : System.FilePath) : IO PUnit := do
+  let date ← IO.Process.run {cmd := "date"}
+  let path := path.join $ (date.replace " " "-").dropRight 1
+  let shouldremove ← path.isDir
+  if shouldremove then IO.FS.removeDirAll path
+  IO.FS.createDirAll path
+  let path ← IO.FS.realPath path
+  let reportFile := path.join "report.csv"
+  let handle ← IO.FS.Handle.mk reportFile .append
+  handle.putStrLn s!"file, result, msg"
+  forM (List.range limit) λ idx ↦ do
+    let idx := idx + 1
+    IO.println s!"=============== Fuzzing \x1b[1;36m{idx}/{limit}\x1b[0m ==============="
+    IO.println s!"[INFO] Generating Test{idx}.java ..."
+    let javaFile ← fuzzer.fuzzIntProgram idx depth path
+    let xml ← compileIR 1 none javaFile
+    let result ← match xml with
+      | .ok xml => verifyXML' xml 30
+      | .error e => pure $ throw e
+    let msg := match result with
+    | .ok _ => s!"Verified,"
+    | .error e => match e with
+    | .Unsupported s => s!"Unsupported, \"{s.replace "\n" "\\n"}\""
+    | .Compile s => s!",Compiler Error, \"{s.replace "\n" "\\n"}\""
+    | .Undecidable => s!"Undecidable, loop"
+    | .CounterExample ce => s!"Counter Example, Counter example available at {ce}"
+    | .Z3 s => s!"Z3 Error, \"{s.replace "\n" "\\n"}\""
+    | .VC s => s!"Verfi Cond Gen Error, \"{s.replace "\n" "\\n"}\""
+    | .Parse s => s!"Parsing Error, \"{s.replace "\n" "\\n"}\""
+    | .Timeout => s!"Timeout,"
+    handle.putStrLn s!"{javaFile}, {msg}"
+    handle.flush
+    let _ ← showResult result
+    pure ()

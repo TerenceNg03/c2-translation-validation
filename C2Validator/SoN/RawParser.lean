@@ -39,6 +39,7 @@ inductive NodeRaw where
 | MulL
 | MulF
 | MulD
+| MulHiL
 | DivI
 | DivL
 | DivF
@@ -120,6 +121,7 @@ def nodeP : Parser (Option (Nat × NodeRaw)) := do
     | "MulL" => pure $ some (idx, NodeRaw.MulL)
     | "MulF" => pure $ some (idx, NodeRaw.MulF)
     | "MulD" => pure $ some (idx, NodeRaw.MulD)
+    | "MulHiL" => pure $ some (idx, NodeRaw.MulHiL)
 
     | "DivI" => pure $ some (idx, NodeRaw.DivI)
     | "DivL" => pure $ some (idx, NodeRaw.DivL)

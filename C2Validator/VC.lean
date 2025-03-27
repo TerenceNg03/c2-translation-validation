@@ -82,6 +82,7 @@ def genNodeVar (node : Nat × Node) : VC (String × Z3Type) :=
     | .AddL _ _
     | .SubL _ _
     | .MulL _ _
+    | .MulHiL _ _
     | .DivL _ _ _
     | .ParmLong
     | .ConL _ => do
@@ -156,6 +157,7 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
   | .AddL x y => bin x y Add
   | .SubL x y => bin x y Sub
   | .MulL x y => bin x y Mul
+  | .MulHiL x y => bin x y MulHiL
   | .DivL ctrl x y => do
     bin x y Div
     let y ← genNodeVar' y
@@ -253,19 +255,20 @@ def genNode (idx : Nat) (node : Node) : VC PUnit :=
     let ctrl ← genNodeVar' ctrl
     let io ← genNodeVar' io
     let params ← params.mapM genNodeVar
-    let paramsName := ctrl :: io :: params.map Prod.fst
-    let paramsTy := ZBool :: ZSideEffect :: params.map Prod.snd
+    let paramsName := io :: params.map Prod.fst
+    let paramsTy := ZSideEffect :: params.map Prod.snd
     let (this, retTy) ← genNodeVar (idx, node)
     -- Fix function with same name but different time
     let nameFix := String.intercalate "-" $ (paramsTy.drop 2).map typeName
-    let name := name ++ nameFix ++ "!"
+    let name := name ++ "!" ++ nameFix
     registerFunction name paramsTy retTy
     registerPostCond $ Assert $ Eq (Var this) (App name $ Var <$> paramsName)
+    registerPostCond $ Assert $ Eq (Index (Var this) 1) (Var ctrl)
     if name.startsWith "trap-" then
      let stage ← read
      match stage with
-      | .pre => modify λ p ↦ {p with outputPre := App "_2" [Var this] :: p.outputPre}
-      | .post => modify λ p ↦ {p with outputPost := App "_2" [Var this] :: p.outputPost}
+      | .pre => modify λ p ↦ {p with outputPre := If (Index (Var this) 1) (Index (Var this) 2) IdentitySideEffect :: p.outputPre}
+      | .post => modify λ p ↦ {p with outputPost := If (Index (Var this) 1) (Index (Var this) 2) IdentitySideEffect :: p.outputPost}
     else
       pure ()
   where

@@ -91,6 +91,7 @@ inductive Term where
 | Add (t1 : Term) (t2 : Term)
 | Sub (t1 : Term) (t2 : Term)
 | Mul (t1 : Term) (t2 : Term)
+| MulHiL (t1 : Term) (t2 : Term)
 | Div (t1 : Term) (t2 : Term)
 | AddFP (t1 : Term) (t2 : Term)
 | SubFP (t1 : Term) (t2 : Term)
@@ -137,6 +138,7 @@ partial def toStrTerm : Term → String
       | .Add t1 t2 => s!"(bvadd {toStrTerm t1} {toStrTerm t2})"
       | .Sub t1 t2 => s!"(bvsub {toStrTerm t1} {toStrTerm t2})"
       | .Mul t1 t2 => s!"(bvmul {toStrTerm t1} {toStrTerm t2})"
+      | .MulHiL t1 t2 => s!"((_ extract 127 64) (bvmul ((_ sign_extend 64) {toStrTerm t1}) ((_ sign_extend 64) {toStrTerm t2})))"
       | .Div t1 t2 => s!"(bvsdiv {toStrTerm t1} {toStrTerm t2})"
       | .AddFP t1 t2 => s!"(fp.add roundNearestTiesToEven {toStrTerm t1} {toStrTerm t2})"
       | .SubFP t1 t2 => s!"(fp.sub roundNearestTiesToEven {toStrTerm t1} {toStrTerm t2})"
@@ -209,7 +211,7 @@ def collectSideEffects : List Term →  Term
 
 def axioms : String := "(assert (forall ((x IO)) (= x (join x (mkIO 0)))))\n(assert (forall ((x IO)) (= x (join (mkIO 0) x))))"
 
-def z3Opts : String := "(set-option :dump_models true)\n\n"
+def z3Opts : String := "(set-option :dump_models true)\n(set-option :pp.bv_literals false)\n\n"
 
 instance : ToString Program where
   toString p :=
@@ -237,7 +239,7 @@ instance : ToString Program where
 infixl:65 "∨" => Program.join
 
 def runZ3 (path : System.FilePath) (timeout : Int) (smt : Bool): IO (Error PUnit) := do
-  IO.println s!"[INFO] Running Z3 prover..."
+  IO.println s!"[INFO] Running Z3 prover ..."
   let command : IO.Process.SpawnArgs :=
   { cmd := "z3"
   , args := #[s!"sat.smt={smt}", s!"-T:{timeout}", s!"{path}"]
@@ -255,14 +257,14 @@ def runZ3 (path : System.FilePath) (timeout : Int) (smt : Bool): IO (Error PUnit
   else pure $ throw $ ValError.Z3 output
 
 def validate (path : System.FilePath) (program : Program) (timeout : Int): IO (Error PUnit) := do
-  IO.println s!"[INFO] Generating SMT file..."
+  IO.println s!"[INFO] Generating SMT file ..."
   let path ← IO.FS.realPath path
   let smtFile := path.withExtension "smt"
   IO.FS.writeFile smtFile s!"{program}"
-  IO.println s!"[INFO] Trying with default setting..."
+  IO.println s!"[INFO] Trying with default setting ..."
   let err ← runZ3 smtFile timeout false
   match err with
     | .error .Timeout => do
-      IO.println s!"[INFO] Retrying with \"sat.smt=true\" option..."
+      IO.println s!"[INFO] Retrying with \"sat.smt=true\" option ..."
       runZ3 smtFile timeout true
     | _ => pure err

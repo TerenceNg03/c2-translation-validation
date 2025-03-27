@@ -28,6 +28,7 @@ inductive Node where
 | MulL (x : Nat × Node) (y : Nat × Node)
 | MulF (x : Nat × Node) (y : Nat × Node)
 | MulD (x : Nat × Node) (y : Nat × Node)
+| MulHiL (x : Nat × Node) (y : Nat × Node)
 | DivI (ctrl : Nat × Node) (x : Nat × Node) (y : Nat × Node)
 | DivL (ctrl : Nat × Node) (x : Nat × Node) (y : Nat × Node)
 | DivF (x : Nat × Node) (y : Nat × Node)
@@ -77,6 +78,12 @@ partial def expectNode (des : Nat) (idx : Nat) : BuildM (Nat × Node) := do
     | none => throw $ ValError.Parse s!"Node {idx} does not generate value but required by an edge from {des}."
   | none => throw $ ValError.Parse s!"Missing edge to Node {des} targeting slot {idx}."
 
+partial def maxIndex (des : Nat): BuildM Nat := do
+  let (_, edges) ← read
+  let src := edges.filter (λ (.Edge _ des' _) ↦ des == des')
+  let src := src.map λ (.Edge _ _ idx) ↦ idx
+  pure $ src.foldl max 0
+
 /- Recursively build nodes and save the result-/
 partial def buildNode (idx : Nat) :  BuildM (Option Node) := do
   let parsed ← get
@@ -107,7 +114,8 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
 | .CallStaticJava name ty => do
   let ctrl ← expectNode idx 0
   let io ← expectNode idx 1
-  let params ← ((List.range 30).drop 5).mapM λ slot ↦ tryCatch (some <$> expectNode idx slot) λ _ ↦ pure none
+  let maxIdx ← maxIndex idx
+  let params ← ((List.range $ maxIdx + 1).drop 5).mapM λ slot ↦ tryCatch (some <$> expectNode idx slot) λ _ ↦ pure none
   let params := params.filterMap (id)
   pure $ Node.CallStaticJava name ty ctrl io params
 | .AddI => bin Node.AddI
@@ -122,6 +130,7 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
 | .MulL => bin Node.MulL
 | .MulF => bin Node.MulF
 | .MulD => bin Node.MulD
+| .MulHiL => bin Node.MulHiL
 | .DivF => bin Node.AddF
 | .DivD => bin Node.AddD
 | .CmpI => bin Node.SubI
