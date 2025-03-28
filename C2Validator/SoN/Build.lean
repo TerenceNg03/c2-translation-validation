@@ -135,8 +135,8 @@ partial def buildNode' (idx : Nat) : NodeRaw → BuildM (Option Node)
 | .MulF => bin Node.MulF
 | .MulD => bin Node.MulD
 | .MulHiL => bin Node.MulHiL
-| .DivF => bin Node.AddF
-| .DivD => bin Node.AddD
+| .DivF => bin Node.DivF
+| .DivD => bin Node.DivD
 | .CmpI => bin Node.SubI
 | .CmpL => bin Node.SubL
 | .LShiftI => bin Node.LShiftI
