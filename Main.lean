@@ -18,10 +18,11 @@ def xml : Cmd := `[Cli|
 
 def runFuzz (p: Parsed) : IO UInt32 := do
   let path : String := p.positionalArg! "output" |>.as! String
-  let depth := λ x ↦ x |>.as! Nat <$> p.flag? "depth" |>.getD 10
+  let depth := λ x ↦ x |>.as! Nat <$> p.flag? "depth" |>.getD 4
   let number := λ x ↦ x |>.as! Nat <$> p.flag? "number" |>.getD 20
-  let timeout := λ x ↦ x |>.as! Nat <$> p.flag? "timeout" |>.getD 30
-  fuzzAndVerify number timeout depth path
+  let timeout := λ x ↦ x |>.as! Nat <$> p.flag? "timeout" |>.getD 40
+  let threaded := p.hasFlag "threaded"
+  fuzzAndVerify threaded number timeout depth path
   pure 0
 
 def fuzz : Cmd := `[Cli|
@@ -29,9 +30,10 @@ def fuzz : Cmd := `[Cli|
   "Run verifier with fuzzer."
 
   FLAGS:
-    depth : Nat;       "Depth of generated tree."
-    number : String;    "Number of examples to be generated."
-    timeout : Nat;      "Timeout"
+    depth : Nat;        "Depth of generated tree, default to 4."
+    number : String;    "Number of examples to be generated, default to 20."
+    timeout : Nat;      "Timeout in seconds, default to 40."
+    threaded;           "Use multithreading."
 
   ARGS:
     output : String;    "Directory to write output files."

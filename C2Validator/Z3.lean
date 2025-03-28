@@ -243,7 +243,7 @@ instance : ToString Program where
 infixl:65 "∨" => Program.join
 
 def runZ3 (path : System.FilePath) (timeout : Int) (smt : Bool): IO (Error PUnit) := do
-  IO.println s!"[INFO] Running Z3 prover ..."
+  IO.println s!"[INFO] Running Z3 prover ... ({path.fileName.get!})"
   let command : IO.Process.SpawnArgs :=
   { cmd := "z3"
   , args := #[s!"sat.smt={smt}", s!"-T:{timeout}", s!"{path}"]
@@ -261,14 +261,14 @@ def runZ3 (path : System.FilePath) (timeout : Int) (smt : Bool): IO (Error PUnit
   else pure $ throw $ ValError.Z3 output
 
 def validate (path : System.FilePath) (program : Program) (timeout : Int): IO (Error PUnit) := do
-  IO.println s!"[INFO] Generating SMT file ..."
+  IO.println s!"[INFO] Generating SMT file ... ({path.fileName.get!})"
   let path ← IO.FS.realPath path
   let smtFile := path.withExtension "smt"
   IO.FS.writeFile smtFile s!"{program}"
-  IO.println s!"[INFO] Trying with default setting ..."
+  IO.println s!"[INFO] Trying with default setting ... ({path.fileName.get!})"
   let err ← runZ3 smtFile timeout false
   match err with
     | .error .Timeout => do
-      IO.println s!"[INFO] Retrying with \"sat.smt=true\" option ..."
+      IO.println s!"[INFO] Retrying with \"sat.smt=true\" option ... ({path.fileName.get!})"
       runZ3 smtFile timeout true
     | _ => pure err

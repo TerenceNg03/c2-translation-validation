@@ -29,21 +29,22 @@ def compileIR (level : Nat) (method : Option String) (path : System.FilePath) : 
     else
     pure $ pure xml
 
-def showResult (result : Error PUnit) : IO UInt32 :=
+def showResult (result : Error PUnit) (path : System.FilePath): IO UInt32 :=
+  let path := path.fileName.get!
   match result with
   | .ok _ => do
-    IO.println s!"[INFO] [\x1b[1;32mVerified\x1b[0m]"
+    IO.println s!"[INFO] [\x1b[1;32mVerified\x1b[0m] [{path}]"
     pure 0
   | .error e => do
     IO.println $ match e with
-    | .Unsupported s => s!"[WARN] [\x1b[1;33mUnsupported\x1b[0m] {s}"
-    | .Compile s => s!"[ERROR] [\x1b[1;31mCompiler Error\x1b[0m] Can not compile file: {s}\x1b[0m"
-    | .Undecidable => s!"[WARN] [\x1b[1;33mUndecidable Problem\x1b[0m] loop"
-    | .CounterExample ce => s!"[INFO] [\x1b[1;31mCounter Example\x1b[0m] Counter example available at {ce}"
-    | .Z3 s => s!"[ERROR] [\x1b[1;31mZ3 Error\x1b[0m] {s}"
-    | .VC s => s!"[ERROR] [\x1b[1;31mVerfi Cond Gen Erro\x1b[0m] {s}"
-    | .Parse s => s!"[ERROR] [\x1b[1;31mParsing Error\x1b[0m] {s}"
-    | .Timeout => s!"[WARN] [\x1b[1;31mTimeout\x1b[0m]"
+    | .Unsupported s => s!"[WARN] [\x1b[1;33mUnsupported\x1b[0m] [{path}] {s}"
+    | .Compile s => s!"[ERROR] [\x1b[1;31mCompiler Error\x1b[0m] [{path}] Can not compile file: {s}\x1b[0m"
+    | .Undecidable => s!"[WARN] [\x1b[1;33mUndecidable Problem\x1b[0m] [{path}] loop"
+    | .CounterExample ce => s!"[INFO] [\x1b[1;31mCounter Example\x1b[0m] [{path}] Counter example available at {ce}"
+    | .Z3 s => s!"[ERROR] [\x1b[1;31mZ3 Error\x1b[0m] [{path}] {s}"
+    | .VC s => s!"[ERROR] [\x1b[1;31mVerfi Cond Gen Erro\x1b[0m] [{path}] {s}"
+    | .Parse s => s!"[ERROR] [\x1b[1;31mParsing Error\x1b[0m] [{path}] {s}"
+    | .Timeout => s!"[WARN] [\x1b[1;31mTimeout\x1b[0m] [{path}]"
     match e with
     | .Timeout | .Undecidable => pure 2
     | _ => pure 1
@@ -60,16 +61,16 @@ def verifyXML' (path : System.FilePath) (timeout : Int): IO (Error PUnit) := do
 
 def verifyXML (path : System.FilePath) (timeout : Int): IO UInt32 := do
   let result ← verifyXML' path timeout
-  showResult result
+  showResult result path
 
 def compileAndVerify (level : Nat) (method : Option String) (path : System.FilePath) (timeout : Int): IO UInt32 := do
   let xml ← compileIR level method path
   let result ← match xml with
     | .ok xml => verifyXML' xml timeout
     | .error e => pure $ throw e
-  showResult result
+  showResult result path
 
-def fuzzAndVerify (limit : Nat) (timeout : Nat) (depth : Nat) (path : System.FilePath) : IO PUnit := do
+def fuzzAndVerify (threaded : Bool) (limit : Nat) (timeout : Nat) (depth : Nat) (path : System.FilePath) : IO PUnit := do
   let date ← IO.Process.run {cmd := "date"}
   let path := path.join $ (date.replace " " "-").dropRight 1
   let shouldremove ← path.isDir
@@ -79,7 +80,7 @@ def fuzzAndVerify (limit : Nat) (timeout : Nat) (depth : Nat) (path : System.Fil
   let reportFile := path.join "report.csv"
   let handle ← IO.FS.Handle.mk reportFile .append
   handle.putStrLn s!"file, result, msg"
-  forM (List.range limit) λ idx ↦ do
+  let fuzzExample idx := do
     let idx := idx + 1
     IO.println s!"=============== Fuzzing \x1b[1;36m{idx}/{limit}\x1b[0m ==============="
     IO.println s!"[INFO] Generating Test{idx}.java ..."
@@ -101,5 +102,10 @@ def fuzzAndVerify (limit : Nat) (timeout : Nat) (depth : Nat) (path : System.Fil
     | .Timeout => s!"Timeout,"
     handle.putStrLn s!"{javaFile}, {msg}"
     handle.flush
-    let _ ← showResult result
+    let _ ← showResult result javaFile
     pure ()
+  if threaded then
+    forM (List.range limit) $ λ idx ↦ concurrently $ fuzzExample idx
+  else
+    forM (List.range limit) fuzzExample
+where concurrently io := BaseIO.toIO $ (IO.asTask io).map λ _ ↦ ()
