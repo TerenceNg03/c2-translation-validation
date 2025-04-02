@@ -90,7 +90,6 @@ partial def fuzzInt : FuzzM Expr := do
     fuzzIntLeaf
   else
     let rand ← IO.rand 0 8
-    modify λ s ↦ {s with depth := s.depth + 1}
     let op := match rand with
     | 0 => Plus
     | 1 => Sub
@@ -100,7 +99,10 @@ partial def fuzzInt : FuzzM Expr := do
     | 6 => And
     | 7 => Or
     | _ => RShift
+    let depth := stat.depth + 1
+    modify λ s ↦ {s with depth := depth}
     let e1 ← fuzzInt
+    modify λ s ↦ {s with depth := depth}
     let e2 ← fuzzInt
     let expr := op e1 e2
     pure $ match expr with
@@ -117,13 +119,15 @@ partial def fuzzFloat : FuzzM Expr := do
     fuzzFloatLeaf
   else
     let rand ← IO.rand 0 3
-    modify λ s ↦ {s with depth := s.depth + 1}
     let op := match rand with
     | 0 => Plus
     | 1 => Sub
     | 2 => Mul
     | _ => Div
+    let depth := stat.depth + 1
+    modify λ s ↦ {s with depth := depth}
     let e1 ← fuzzFloat
+    modify λ s ↦ {s with depth := depth}
     let e2 ← fuzzFloat
     let expr := op e1 e2
     pure $ match expr with
