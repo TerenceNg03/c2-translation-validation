@@ -1,0 +1,19 @@
+
+(set-option :dump_models true)
+(set-option :sat.euf true)
+(set-option :tactic.default_tactic sat)
+(set-option :pp.fp_real_literals true)
+
+; Variable Declarations
+(declare-const x Float32)
+(declare-const y Float32)
+(declare-const z1 Float32)
+(declare-const z2 Float32)
+
+; VC Parameters
+(assert (= x (fp #b0 #b10000000 #b00000000000000000000000)))
+(assert (= z1 (fp.add roundNearestTiesToEven y y)))
+(assert (= z2 (fp.mul roundNearestTiesToEven x y)))
+(assert (not (= z1 z2)))
+
+(check-sat)

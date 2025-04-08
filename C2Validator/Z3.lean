@@ -268,7 +268,7 @@ def validate (path : System.FilePath) (program : Program) (timeout : Int): IO (E
   IO.println s!"[INFO] Trying with default setting ... ({path.fileName.get!})"
   let err ← runZ3 smtFile timeout false
   match err with
-    | .error .Timeout => do
+    | .error .Timeout | .error (.Z3 _)=> do
       IO.println s!"[INFO] Retrying with \"sat.smt=true\" option ... ({path.fileName.get!})"
       runZ3 smtFile timeout true
     | _ => pure err

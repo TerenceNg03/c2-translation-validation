@@ -6,20 +6,23 @@ import C2Validator.Fuzzer.Basic
 
 open ValError
 
-def compileIR (level : Nat) (method : Option String) (path : System.FilePath) : IO (Error System.FilePath):= do
+def compileIR (level : Nat) (method : Option String) (path : System.FilePath) (printGraph : Bool): IO (Error System.FilePath):= do
   let path ← IO.FS.realPath path
   let xml := path.withExtension "xml"
   let jClass := path.fileStem.get!
   let method := method.getD s!"{jClass}::{jClass.toLower}"
   let command : IO.Process.SpawnArgs :=
       { cmd := "java"
-      , args := #[ "-Xcomp"
+      , args := let args := #[ "-Xcomp"
                 , s!"-XX:CompileCommand=compileonly,{method}"
                 , s!"-XX:PrintIdealGraphLevel={level}"
                 , s!"-XX:PrintIdealGraphFile={xml}"
                 , path.toString
                 ]
-      , stdout := .null
+                have h : args.size = 5 := by
+                  constructor
+                if printGraph then args else args.eraseIdx 3
+      , stdout := if printGraph then .null else .inherit
       }
   IO.println s!"[INFO] Compiling {path.fileName.get!} ..."
   let child ← IO.Process.spawn command
@@ -63,8 +66,8 @@ def verifyXML (path : System.FilePath) (timeout : Int): IO UInt32 := do
   let result ← verifyXML' path timeout
   showResult result path
 
-def compileAndVerify (level : Nat) (method : Option String) (path : System.FilePath) (timeout : Int): IO UInt32 := do
-  let xml ← compileIR level method path
+def compileAndVerify (method : Option String) (path : System.FilePath) (timeout : Int): IO UInt32 := do
+  let xml ← compileIR 1 method path true
   let result ← match xml with
     | .ok xml => verifyXML' xml timeout
     | .error e => pure $ throw e
@@ -85,7 +88,7 @@ def fuzzAndVerify (threaded : Bool) (limit : Nat) (timeout : Nat) (depth : Nat) 
     IO.println s!"=============== Fuzzing \x1b[1;36m{idx}/{limit}\x1b[0m ==============="
     IO.println s!"[INFO] Generating Test{idx}.java ..."
     let javaFile ← fuzzer.fuzzIntProgram idx depth path
-    let xml ← compileIR 1 none javaFile
+    let xml ← compileIR 1 none javaFile true
     let result ← match xml with
       | .ok xml => verifyXML' xml timeout
       | .error e => pure $ throw e

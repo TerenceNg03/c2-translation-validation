@@ -16,6 +16,25 @@ def xml : Cmd := `[Cli|
     file : String;      "File to verify."
 ]
 
+def compileFile (p : Parsed) : IO UInt32 := do
+  let file : String := p.positionalArg! "file" |>.as! String
+  let level := λ x ↦ x |>.as! Nat <$> p.flag? "level" |>.getD 1
+  let method := λ x ↦ x |>.as! String <$> p.flag? "method"
+  let _ ← compileIR level method file false
+  pure 0
+
+def compile : Cmd := `[Cli|
+  compile VIA compileFile;
+  "Compile and send ideal graph to IGV"
+
+  FLAGS:
+    level : Nat;       "Ideal graph level."
+    method : String;    "Target method."
+
+  ARGS:
+    file : String;      "File to compile."
+]
+
 def runFuzz (p: Parsed) : IO UInt32 := do
   let path : String := p.positionalArg! "output" |>.as! String
   let depth := λ x ↦ x |>.as! Nat <$> p.flag? "depth" |>.getD 4
@@ -41,17 +60,15 @@ def fuzz : Cmd := `[Cli|
 
 def validate (p : Parsed) : IO UInt32 := do
   let file : String := p.positionalArg! "file" |>.as! String
-  let level := λ x ↦ x |>.as! Nat <$> p.flag? "level" |>.getD 1
   let method := λ x ↦ x |>.as! String <$> p.flag? "method"
-  let timeout := λ x ↦ x |>.as! Nat <$> p.flag? "timeout" |>.getD 5
-  compileAndVerify level method file timeout
+  let timeout := λ x ↦ x |>.as! Nat <$> p.flag? "timeout" |>.getD 60
+  compileAndVerify method file timeout
 
 def c2validator : Cmd := `[Cli|
   c2validator VIA validate;
   "Translation validation on HotSpot C2 compiler."
 
   FLAGS:
-    level : Nat;       "Ideal graph level."
     method : String;    "Target method."
     timeout : Nat;      "Timeout"
 
@@ -60,7 +77,8 @@ def c2validator : Cmd := `[Cli|
 
   SUBCOMMANDS:
     xml;
-    fuzz
+    fuzz;
+    compile
 ]
 
 def main (args : List String) : IO UInt32 := do
