@@ -250,7 +250,7 @@ def runZ3 (path : System.FilePath) (timeout : Int) (smt : Bool): IO (Nat × Erro
   }
   let timeCmd : IO.Process.SpawnArgs :=
   { cmd := "bash"
-  , args := #["-c", "if command -v gdate 2>&1 >/dev/null; then gdate +%s%3N; else date +%s000; fi"]
+  , args := #["-c", "if [ $(uname) = \"Linux\" ]; then date +%s%3N; else if command -v gdate 2>&1 >/dev/null; then gdate +%s%3N; else date +%s000; fi fi"]
   }
   let startTime ← IO.Process.run timeCmd
   let .mk _ output _ ← IO.Process.output command
