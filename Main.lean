@@ -37,9 +37,9 @@ def compile : Cmd := `[Cli|
 
 def runFuzz (p: Parsed) : IO UInt32 := do
   let path : String := p.positionalArg! "output" |>.as! String
-  let depth := λ x ↦ x |>.as! Nat <$> p.flag? "depth" |>.getD 4
+  let depth := λ x ↦ x |>.as! Nat <$> p.flag? "depth" |>.getD 10
   let number := λ x ↦ x |>.as! Nat <$> p.flag? "number" |>.getD 20
-  let timeout := λ x ↦ x |>.as! Nat <$> p.flag? "timeout" |>.getD 40
+  let timeout := λ x ↦ x |>.as! Nat <$> p.flag? "timeout" |>.getD 80
   let threaded := p.hasFlag "threaded"
   fuzzAndVerify threaded number timeout depth path
   pure 0
@@ -49,9 +49,9 @@ def fuzz : Cmd := `[Cli|
   "Run verifier with fuzzer."
 
   FLAGS:
-    depth : Nat;        "Depth of generated tree, default to 4."
+    depth : Nat;        "Depth of generated tree, default to 10."
     number : String;    "Number of examples to be generated, default to 20."
-    timeout : Nat;      "Timeout in seconds, default to 40."
+    timeout : Nat;      "Timeout in seconds, default to 80."
     threaded;           "Use multithreading."
 
   ARGS:

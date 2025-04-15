@@ -242,14 +242,22 @@ instance : ToString Program where
 
 infixl:65 "∨" => Program.join
 
-def runZ3 (path : System.FilePath) (timeout : Int) (smt : Bool): IO (Error PUnit) := do
+def runZ3 (path : System.FilePath) (timeout : Int) (smt : Bool): IO (Nat × Error PUnit) := do
   IO.println s!"[INFO] Running Z3 prover ... ({path.fileName.get!})"
   let command : IO.Process.SpawnArgs :=
   { cmd := "z3"
   , args := #[s!"sat.smt={smt}", s!"-T:{timeout}", s!"{path}"]
   }
+  let timeCmd : IO.Process.SpawnArgs :=
+  { cmd := "bash"
+  , args := #["-c", "if command -v gdate 2>&1 >/dev/null; then gdate +%s%3N; else date +%s000; fi"]
+  }
+  let startTime ← IO.Process.run timeCmd
   let .mk _ output _ ← IO.Process.output command
-  if "unsat".isPrefixOf output
+  let endTime ← IO.Process.run timeCmd
+  let startTime := (startTime.stripSuffix "\n").toNat!
+  let endTime := (endTime.stripSuffix "\n").toNat!
+  let result ← if "unsat".isPrefixOf output
     then pure $ pure ()
   else if "sat".isPrefixOf output
     then do
@@ -259,15 +267,17 @@ def runZ3 (path : System.FilePath) (timeout : Int) (smt : Bool): IO (Error PUnit
   else if "timeout".isPrefixOf output
     then pure $ throw $ ValError.Timeout
   else pure $ throw $ ValError.Z3 output
+  pure (endTime - startTime, result)
 
-def validate (path : System.FilePath) (program : Program) (timeout : Int): IO (Error PUnit) := do
+def validate (path : System.FilePath) (program : Program) (timeout : Int): IO (Nat × Error PUnit) := do
   IO.println s!"[INFO] Generating SMT file ... ({path.fileName.get!})"
   let path ← IO.FS.realPath path
   let smtFile := path.withExtension "smt"
   IO.FS.writeFile smtFile s!"{program}"
   IO.println s!"[INFO] Trying with default setting ... ({path.fileName.get!})"
   let err ← runZ3 smtFile timeout false
-  match err with
+  let (_, result) := err
+  match result with
     | .error .Timeout | .error (.Z3 _)=> do
       IO.println s!"[INFO] Retrying with \"sat.smt=true\" option ... ({path.fileName.get!})"
       runZ3 smtFile timeout true

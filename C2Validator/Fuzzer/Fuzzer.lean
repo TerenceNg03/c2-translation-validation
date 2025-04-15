@@ -89,28 +89,31 @@ partial def fuzzInt : FuzzM Expr := do
   if maxDepth == stat.depth then
     fuzzIntLeaf
   else
-    let rand ← IO.rand 0 8
-    let op := match rand with
-    | 0 => Plus
-    | 1 => Sub
-    | 2 => Mul
-    | 3 => Div
-    | 5 => LShift
-    | 6 => And
-    | 7 => Or
-    | _ => RShift
-    let depth := stat.depth + 1
-    modify λ s ↦ {s with depth := depth}
-    let e1 ← fuzzInt
-    modify λ s ↦ {s with depth := depth}
-    let e2 ← fuzzInt
-    let expr := op e1 e2
-    pure $ match expr with
-    | LShift x (ConI v) => LShift x (ConI (v % 16))
-    | LShift x (ConL v) => LShift x (ConI (v % 64))
-    | RShift x (ConI v) => RShift x (ConI (v % 16))
-    | RShift x (ConL v) => RShift x (ConI (v % 64))
-    | _ => expr
+    let rand ← IO.rand 0 9
+    if rand == 9 then
+      fuzzIntLeaf
+    else
+      let op := match rand with
+      | 0 => Plus
+      | 1 => Sub
+      | 2 => Mul
+      | 3 => Div
+      | 5 => LShift
+      | 6 => And
+      | 7 => Or
+      | _ => RShift
+      let depth := stat.depth + 1
+      modify λ s ↦ {s with depth := depth}
+      let e1 ← fuzzInt
+      modify λ s ↦ {s with depth := depth}
+      let e2 ← fuzzInt
+      let expr := op e1 e2
+      pure $ match expr with
+      | LShift x (ConI v) => LShift x (ConI (v % 16))
+      | LShift x (ConL v) => LShift x (ConI (v % 64))
+      | RShift x (ConI v) => RShift x (ConI (v % 16))
+      | RShift x (ConL v) => RShift x (ConI (v % 64))
+      | _ => expr
 
 partial def fuzzFloat : FuzzM Expr := do
   let stat ← get
@@ -118,24 +121,27 @@ partial def fuzzFloat : FuzzM Expr := do
   if maxDepth == stat.depth then
     fuzzFloatLeaf
   else
-    let rand ← IO.rand 0 3
-    let op := match rand with
-    | 0 => Plus
-    | 1 => Sub
-    | 2 => Mul
-    | _ => Div
-    let depth := stat.depth + 1
-    modify λ s ↦ {s with depth := depth}
-    let e1 ← fuzzFloat
-    modify λ s ↦ {s with depth := depth}
-    let e2 ← fuzzFloat
-    let expr := op e1 e2
-    pure $ match expr with
-    | LShift x (ConI v) => LShift x (ConI (v % 16))
-    | LShift x (ConL v) => LShift x (ConI (v % 64))
-    | RShift x (ConI v) => RShift x (ConI (v % 16))
-    | RShift x (ConL v) => RShift x (ConI (v % 64))
-    | _ => expr
+    let rand ← IO.rand 0 4
+    if rand == 4 then
+      fuzzFloatLeaf
+    else
+      let op := match rand with
+      | 0 => Plus
+      | 1 => Sub
+      | 2 => Mul
+      | _ => Div
+      let depth := stat.depth + 1
+      modify λ s ↦ {s with depth := depth}
+      let e1 ← fuzzFloat
+      modify λ s ↦ {s with depth := depth}
+      let e2 ← fuzzFloat
+      let expr := op e1 e2
+      pure $ match expr with
+      | LShift x (ConI v) => LShift x (ConI (v % 16))
+      | LShift x (ConL v) => LShift x (ConI (v % 64))
+      | RShift x (ConI v) => RShift x (ConI (v % 16))
+      | RShift x (ConL v) => RShift x (ConI (v % 64))
+      | _ => expr
 
 def printParams : Expr -> StateM (Lean.RBTree Nat compare) (List String)
 | .Plus e1 e2
@@ -196,10 +202,10 @@ where
       set $ (idx + 1, s ++ s!"        var v{idx} = {s1} {op} {s2};\n")
       pure s!"v{idx}"
 
-def printProgram (idx : Nat) (expr : Expr): IO String := do
+def printProgram (idx : Nat) (expr : Expr): IO (Nat × String) := do
 let paramList := (printParams expr).run' Lean.RBTree.empty
 let (ret, (_, body)) ← (printExpr expr).run (0, "")
-pure $ s!"\
+pure $ ((body.split λ c ↦ c == '\n').length, s!"\
 public class Test{idx}" ++ " {" ++ s!"
     public static void main(String[] args)" ++ " {" ++s!"
       try" ++ " {" ++s!"
@@ -211,7 +217,7 @@ public class Test{idx}" ++ " {" ++ s!"
     static double test{idx} ({String.intercalate ", " paramList}) "++" {"++s!"
 {body}        return {ret};
     }
-}\n"
+}\n")
 
 def runFuzzer (fuzzer : FuzzM Expr) (depth : Nat) : IO Expr := do
   (fuzzer.run depth).run' {depth := 0, vars := 0 : FuzzState}

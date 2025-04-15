@@ -220,7 +220,7 @@ def readGraphRaw : Parser GraphRaw := do
 
 def parseRaw (elem : Element) : Error (GraphRaw × GraphRaw) := do
   let graphs ← content "group" (contentFiltered filter readGraphRaw) elem
-  match (Array.get? graphs 0, Array.get? graphs 1) with
+  match (graphs[0]?, graphs[1]?) with
   | (some g1, some g2) => pure $ if g1.name == "After Parsing" then (g1, g2) else (g2, g1)
   | _ => throw $ ValError.Parse "«After Parsing» or «Before matching» phase missing."
 where

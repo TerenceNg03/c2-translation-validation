@@ -32,14 +32,17 @@ def compileIR (level : Nat) (method : Option String) (path : System.FilePath) (p
     else
     pure $ pure xml
 
-def showResult (result : Error PUnit) (path : System.FilePath): IO UInt32 :=
+def showResult (result : Nat × Error PUnit) (path : System.FilePath): IO UInt32 :=
   let path := path.fileName.get!
+  let (time, result) := result
+  let time := time.toFloat / 1000
+  let time := s!"[INFO] Finished in {time} seconds ({path})\n"
   match result with
   | .ok _ => do
-    IO.println s!"[INFO] [\x1b[1;32mVerified\x1b[0m] [{path}]"
+    IO.println $ time ++ s!"[INFO] [\x1b[1;32mVerified\x1b[0m] [{path}]"
     pure 0
   | .error e => do
-    IO.println $ match e with
+    IO.println $ time ++ match e with
     | .Unsupported s => s!"[WARN] [\x1b[1;33mUnsupported\x1b[0m] [{path}] {s}"
     | .Compile s => s!"[ERROR] [\x1b[1;31mCompiler Error\x1b[0m] [{path}] Can not compile file: {s}\x1b[0m"
     | .Undecidable => s!"[WARN] [\x1b[1;33mUndecidable Problem\x1b[0m] [{path}] loop"
@@ -52,7 +55,7 @@ def showResult (result : Error PUnit) (path : System.FilePath): IO UInt32 :=
     | .Timeout | .Undecidable => pure 2
     | _ => pure 1
 
-def verifyXML' (path : System.FilePath) (timeout : Int): IO (Error PUnit) := do
+def verifyXML' (path : System.FilePath) (timeout : Int): IO (Nat × Error PUnit) := do
   let xml ← IO.FS.readFile path
   let graphs := do
     let elem := Except.mapError ValError.Parse $ Lean.Xml.parse xml
@@ -60,7 +63,7 @@ def verifyXML' (path : System.FilePath) (timeout : Int): IO (Error PUnit) := do
   let program := graphs >>= (Function.uncurry VC.vcGen)
   let run ← match program with
   | .ok p => Z3.validate path p timeout
-  | .error e => pure $ throw e
+  | .error e => pure $ (0, throw e)
 
 def verifyXML (path : System.FilePath) (timeout : Int): IO UInt32 := do
   let result ← verifyXML' path timeout
@@ -70,7 +73,7 @@ def compileAndVerify (method : Option String) (path : System.FilePath) (timeout 
   let xml ← compileIR 1 method path true
   let result ← match xml with
     | .ok xml => verifyXML' xml timeout
-    | .error e => pure $ throw e
+    | .error e => pure $ (0, throw e)
   showResult result path
 
 def fuzzAndVerify (threaded : Bool) (limit : Nat) (timeout : Nat) (depth : Nat) (path : System.FilePath) : IO PUnit := do
@@ -82,28 +85,30 @@ def fuzzAndVerify (threaded : Bool) (limit : Nat) (timeout : Nat) (depth : Nat) 
   let path ← IO.FS.realPath path
   let reportFile := path.join "report.csv"
   let handle ← IO.FS.Handle.mk reportFile .append
-  handle.putStrLn s!"file, result, msg"
+  handle.putStrLn s!"file,result,msg,size,time"
   let fuzzExample idx := do
     let idx := idx + 1
     IO.println s!"=============== Fuzzing \x1b[1;36m{idx}/{limit}\x1b[0m ==============="
     IO.println s!"[INFO] Generating Test{idx}.java ..."
-    let javaFile ← fuzzer.fuzzIntProgram idx depth path
+    let (size, javaFile) ← fuzzer.fuzzProgram idx depth path
     let xml ← compileIR 1 none javaFile true
     let result ← match xml with
       | .ok xml => verifyXML' xml timeout
-      | .error e => pure $ throw e
-    let msg := match result with
+      | .error e => pure $ (0, throw e)
+    let (time, result') := result
+    let time := time.toFloat / 1000
+    let msg := match result' with
     | .ok _ => s!"Verified,"
     | .error e => match e with
-    | .Unsupported s => s!"Unsupported, \"{s.replace "\n" "\\n"}\""
-    | .Compile s => s!",Compiler Error, \"{s.replace "\n" "\\n"}\""
-    | .Undecidable => s!"Undecidable, loop"
-    | .CounterExample ce => s!"Counter Example, Counter example available at {ce}"
-    | .Z3 s => s!"Z3 Error, \"{s.replace "\n" "\\n"}\""
-    | .VC s => s!"Verfi Cond Gen Error, \"{s.replace "\n" "\\n"}\""
-    | .Parse s => s!"Parsing Error, \"{s.replace "\n" "\\n"}\""
+    | .Unsupported s => s!"Unsupported,\"{s.replace "\n" "\\n"}\""
+    | .Compile s => s!",Compiler Error,\"{s.replace "\n" "\\n"}\""
+    | .Undecidable => s!"Undecidable,loop"
+    | .CounterExample ce => s!"Counter Example,Counter example available at {ce}"
+    | .Z3 s => s!"Z3 Error,\"{s.replace "\n" "\\n"}\""
+    | .VC s => s!"Verfi Cond Gen Error,\"{s.replace "\n" "\\n"}\""
+    | .Parse s => s!"Parsing Error,\"{s.replace "\n" "\\n"}\""
     | .Timeout => s!"Timeout,"
-    handle.putStrLn s!"{javaFile}, {msg}"
+    handle.putStrLn s!"{javaFile},{msg},{size},{time}"
     handle.flush
     let _ ← showResult result javaFile
     pure ()
