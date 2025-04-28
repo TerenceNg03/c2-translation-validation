@@ -58,6 +58,40 @@ def fuzz : Cmd := `[Cli|
     output : String;    "Directory to write output files."
 ]
 
+def compareResult (p : Parsed) : IO UInt32 := do
+  let path : String := p.positionalArg! "file" |>.as! String
+  let path := System.FilePath.mk path
+  let path ← IO.FS.realPath path
+  let className := Option.get! path.fileStem
+  IO.println s!"[INFO] Running with interpreter mode ... ({path})"
+  let child ← IO.Process.spawn
+    { cmd := "java"
+    , args := #["-Xint", path.toString]
+    , stdout := .inherit
+    , stderr := .inherit
+    }
+  let _ ← IO.Process.Child.wait child
+  IO.println s!"[INFO] Running with C2 ... ({path})"
+  let child ← IO.Process.spawn
+    { cmd := "java"
+    , args := #[ "-Xcomp"
+              , "-XX:-TieredCompilation"
+              , s!"-XX:CompileCommand=compileonly,{className}::{className.toLower}"
+              , path.toString]
+    , stdout := .inherit
+    , stderr := .inherit
+    }
+  let _ ← IO.Process.Child.wait child
+  pure 0
+
+def compare : Cmd := `[Cli|
+  compare VIA compareResult;
+  "Compare result between interpreter and C2."
+
+  ARGS:
+    file : String;      "File to compare."
+]
+
 def validate (p : Parsed) : IO UInt32 := do
   let file : String := p.positionalArg! "file" |>.as! String
   let method := λ x ↦ x |>.as! String <$> p.flag? "method"
@@ -78,7 +112,8 @@ def c2validator : Cmd := `[Cli|
   SUBCOMMANDS:
     xml;
     fuzz;
-    compile
+    compile;
+    compare
 ]
 
 def main (args : List String) : IO UInt32 := do

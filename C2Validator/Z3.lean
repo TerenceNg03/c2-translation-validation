@@ -215,7 +215,7 @@ def collectSideEffects : List Term →  Term
 
 def axioms : String := "(assert (forall ((x IO)) (= x (join x (mkIO 0)))))\n(assert (forall ((x IO)) (= x (join (mkIO 0) x))))"
 
-def z3Opts : String := "(set-option :dump_models true)\n(set-option :pp.bv_literals false)\n\n"
+def z3Opts : String := "(set-option :dump_models true)\n(set-option :pp.bv_literals true)\n\n"
 
 instance : ToString Program where
   toString p :=

@@ -1,6 +1,7 @@
 public class Floating {
     public static void main(String[] args) {
-        floating(0);
+        float f = floating(-0.0f);
+        System.out.println(f);
     }
 
     static float floating(float f) {

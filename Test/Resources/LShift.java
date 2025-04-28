@@ -1,6 +1,7 @@
 public class LShift{
     public static void main(String[] args) {
-        lshift(10);
+        long x = lshift(1);
+        System.out.println(x);
     }
 
     static long lshift(long i){
